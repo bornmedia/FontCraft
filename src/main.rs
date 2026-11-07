@@ -1,0 +1,78 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod activation;
+mod app;
+mod config;
+mod extras;
+mod fontload;
+mod google;
+mod library;
+mod sync;
+mod autoact;
+mod uifont;
+mod updates;
+mod watcher;
+#[cfg(windows)]
+mod tray;
+
+use std::path::PathBuf;
+
+pub(crate) fn icon() -> egui::IconData {
+    let n = 64usize;
+    let mut rgba = vec![0u8; n * n * 4];
+    for y in 0..n {
+        for x in 0..n {
+            let (fx, fy) = (x as f32, y as f32);
+            // rounded square
+            let r = 14.0;
+            let cx = fx.clamp(r, n as f32 - 1.0 - r);
+            let cy = fy.clamp(r, n as f32 - 1.0 - r);
+            let inside = (fx - cx).powi(2) + (fy - cy).powi(2) <= r * r;
+            let i = (y * n + x) * 4;
+            if inside {
+                // the letter F
+                let letter = (18..26).contains(&x) && (14..50).contains(&y)
+                    || (18..46).contains(&x) && (14..22).contains(&y)
+                    || (18..40).contains(&x) && (29..36).contains(&y);
+                let c = if letter { [255, 255, 255] } else { [0x6d, 0x5d, 0xfc] };
+                rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+            }
+        }
+    }
+    egui::IconData { rgba, width: n as u32, height: n as u32 }
+}
+
+fn main() -> eframe::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    let mut shot = None;
+    let mut minimized = false;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--screenshot" => {
+                if let Some(p) = args.get(i + 1) {
+                    shot = Some(PathBuf::from(p));
+                    i += 1;
+                }
+            }
+            "--minimized" => minimized = true,
+            _ => {}
+        }
+        i += 1;
+    }
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_title("FontCraft")
+            .with_app_id("fontcraft")
+            .with_inner_size([1360.0, 840.0])
+            .with_min_inner_size([960.0, 560.0])
+            .with_drag_and_drop(true)
+            .with_icon(icon()),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "FontCraft",
+        options,
+        Box::new(move |cc| Ok(Box::new(app::FontCraftApp::new(cc, shot, minimized)))),
+    )
+}

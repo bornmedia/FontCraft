@@ -1,0 +1,20 @@
+/target
+/shots
+/dist
+# local build setup of the author's PC (other machines use the normal Rust toolchain)
+/.cargo/config.toml
+/rust-toolchain.toml
+# FontCraft never ships fonts: keep every font file out of the project
+*.ttf
+*.TTF
+*.otf
+*.OTF
+*.ttc
+*.TTC
+*.otc
+*.woff
+*.woff2
+*.dfont
+*.pfb
+*.pfm
+*.fon

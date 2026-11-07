@@ -1,0 +1,42 @@
+[package]
+name = "fontcraft"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "FontCraft - a free font manager: organise, preview and activate fonts without installing them."
+
+[dependencies]
+# No built-in fonts: FontCraft ships without a single font file and uses the
+# computer's own interface font (see src/uifont.rs).
+eframe = { version = "0.31", default-features = false, features = ["accesskit", "glow", "wayland", "x11"] }
+winit = "0.30"
+egui = { version = "0.31", default-features = false }
+ab_glyph = "0.2"
+ttf-parser = "0.25"
+rfd = "0.15"
+image = { version = "0.25", default-features = false, features = ["png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+flate2 = "1"
+
+[target.'cfg(windows)'.dependencies]
+tray-icon = "0.21"
+raw-window-handle = "0.6"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 4

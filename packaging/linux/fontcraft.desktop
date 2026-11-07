@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=FontCraft
+GenericName=Font Manager
+Comment=Organise, preview and activate fonts without installing them
+Exec=fontcraft
+Terminal=false
+Categories=Graphics;Utility;
+Keywords=font;fonts;typography;typeface;

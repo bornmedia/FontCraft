@@ -1,0 +1,171 @@
+# Builds FontCraft for Windows, macOS and Linux and publishes the downloads as a
+# GitHub release.
+#
+# Two ways to start it:
+#   * GitHub website: Actions tab > "Release" > "Run workflow". The version number
+#     is taken from Cargo.toml (change it there before each new release).
+#   * Or push a tag such as v1.2.0.
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  # rust-toolchain.toml pins a Windows toolchain for the author's PC; CI uses plain stable.
+  RUSTUP_TOOLCHAIN: stable
+  CARGO_TERM_COLOR: always
+  # Lets the app check this repository for newer versions.
+  FONTCRAFT_REPO: ${{ github.repository }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+            echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: FontCraft-Windows-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: FontCraft-macOS-AppleSilicon
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: FontCraft-macOS-Intel
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: FontCraft-Linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add ${{ matrix.target }} --toolchain stable
+
+      - name: Linux build libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+
+      - name: Make sure no font is bundled
+        shell: bash
+        run: |
+          # FontCraft must not ship a single font file: no fonts in the project,
+          # and the window toolkit's own fonts are switched off.
+          found=$(git ls-files | grep -iE '\.(ttf|otf|ttc|otc|woff2?|dfont|pfb|fon)$' || true)
+          if [ -n "$found" ]; then echo "Font files in the project: $found"; exit 1; fi
+          if cargo tree --locked --target ${{ matrix.target }} -e features 2>/dev/null | grep -q default_fonts; then
+            echo "The built-in interface fonts are switched on"; exit 1
+          fi
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/FontCraft | Out-Null
+          Copy-Item target/${{ matrix.target }}/release/fontcraft.exe dist/FontCraft/FontCraft.exe
+          Copy-Item README.md, LICENSE dist/FontCraft/
+          Compress-Archive -Path dist/FontCraft -DestinationPath dist/${{ matrix.name }}.zip
+          Copy-Item dist/FontCraft/FontCraft.exe dist/${{ matrix.name }}.exe
+
+      - name: Package (macOS app)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          VERSION="${{ needs.version.outputs.tag }}"; VERSION="${VERSION#v}"
+          APP=dist/FontCraft.app
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/${{ matrix.target }}/release/fontcraft "$APP/Contents/MacOS/FontCraft"
+          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          # unsigned build: give it an ad-hoc signature so Apple Silicon Macs will start it
+          codesign --force --deep --sign - "$APP"
+          cd dist && ditto -c -k --keepParent FontCraft.app ${{ matrix.name }}.zip
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p dist/FontCraft
+          cp target/${{ matrix.target }}/release/fontcraft dist/FontCraft/fontcraft
+          cp packaging/linux/fontcraft.desktop packaging/linux/install.sh README.md LICENSE dist/FontCraft/
+          chmod +x dist/FontCraft/fontcraft dist/FontCraft/install.sh
+          tar -C dist -czf dist/${{ matrix.name }}.tar.gz FontCraft
+
+      - name: Check the download has no fonts
+        shell: bash
+        run: |
+          cd dist
+          for f in *.zip; do [ -f "$f" ] && unzip -l "$f" | grep -iE '\.(ttf|otf|ttc|woff2?)$' && exit 1; done
+          for f in *.tar.gz; do [ -f "$f" ] && tar -tzf "$f" | grep -iE '\.(ttf|otf|ttc|woff2?)$' && exit 1; done
+          echo "No font files in the downloads."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/*.zip
+            dist/*.exe
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: FontCraft ${{ needs.version.outputs.tag }}
+          make_latest: true
+          files: dist/*
+          body: |
+            ## Download FontCraft
+
+            | Your computer | File |
+            |---|---|
+            | **Windows** (10 / 11) | `FontCraft-Windows-x64.exe` (just run it) or the `.zip` |
+            | **Mac with Apple chip** (M1, M2, M3, M4…) | `FontCraft-macOS-AppleSilicon.zip` |
+            | **Mac with Intel chip** | `FontCraft-macOS-Intel.zip` |
+            | **Linux** | `FontCraft-Linux-x64.tar.gz` |
+
+            **First start on a Mac:** unzip, move FontCraft to Applications, then right-click it and choose *Open*
+            (the app isn't signed with a paid Apple certificate, so macOS asks once).
+
+            **Windows:** if SmartScreen warns about an unknown app, click *More info* › *Run anyway*.
+
+            **Linux:** unpack, then run `./install.sh` to add FontCraft to your app menu (or start `./fontcraft` directly).
