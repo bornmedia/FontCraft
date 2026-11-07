@@ -60,11 +60,15 @@ impl FontCraftApp {
                 });
                 let src = if system {
                     "Installed on this computer".to_string()
+                } else if self.faces[primary].meta.path.starts_with(google::fonts_dir()) {
+                    "Google Fonts".to_string()
                 } else {
                     let path = self.faces[primary].meta.path.parent().map(|d| d.to_path_buf());
                     path.and_then(|d| self.node_index.get(&d).map(|i| self.nodes[*i].name.clone())).unwrap_or_default()
                 };
-                ui.label(RichText::new(format!("{nfaces} style{} · {src}", if nfaces == 1 { "" } else { "s" })).color(p.weak).size(12.0));
+                let styles = format!("{nfaces} style{}", if nfaces == 1 { "" } else { "s" });
+                let line = if src.is_empty() { styles } else { format!("{styles} · {src}") };
+                ui.label(RichText::new(line).color(p.weak).size(12.0));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if !system {

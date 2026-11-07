@@ -1,0 +1,111 @@
+# FontCraft
+
+A free font manager for **Windows, macOS and Linux**. Keep the fonts you own in your own folders,
+preview them, sort them into collections, and switch them on only when you need them. Active fonts show up
+in Word, Photoshop, Affinity and every other app, so you don't have to install your whole font collection
+on the system.
+
+Every feature is included for everyone. There's no account, no subscription and no ads.
+
+![FontCraft library](docs/screenshots/library.png)
+
+## Download
+
+Get the newest version from the **[Releases page](../../releases/latest)**:
+
+| Your computer | File |
+|---|---|
+| Windows 10 / 11 | `FontCraft-Windows-x64.exe` (or the `.zip`) |
+| Mac with Apple chip (M1 and newer) | `FontCraft-macOS-AppleSilicon.zip` |
+| Mac with Intel chip | `FontCraft-macOS-Intel.zip` |
+| Linux | `FontCraft-Linux-x64.tar.gz` |
+
+* **Mac:** unzip the file and move FontCraft to Applications. The first time, right-click it and choose *Open*.
+* **Windows:** if SmartScreen warns about an unknown app, click *More info* › *Run anyway*.
+* **Linux:** unpack the file and run `./install.sh` to add FontCraft to your app menu.
+
+FontCraft tells you when a newer version is out. You can turn this off in Settings.
+
+FontCraft doesn't include any font files. It shows the fonts already on your computer, the folders you add,
+and the Google Fonts you choose to download.
+
+## What it can do
+
+### Your library, switched on and off with one click
+Add any folders with fonts; sub-folders appear as a tree. FontCraft watches them, so fonts you copy in show up
+within seconds and deleted ones disappear. Click the dot next to a font, folder, collection or tag to activate it.
+A filled dot means the font can be used in every app.
+
+### Collections and tags
+Drag fonts onto a collection or tag in the sidebar. Collections can be exported to a folder, printed as a specimen
+and exported as CSS. FontCraft also adds tags by itself (serif, sans, script, mono, heavy, condensed, high-contrast…).
+
+![Collections](docs/screenshots/collections.png)
+
+### Google Fonts
+Browse about 1,900 free families with live previews and filter them by category. Click the dot to download and
+activate a family.
+
+![Google Fonts](docs/screenshots/google-fonts.png)
+
+### Super search
+Find fonts by how they look: contrast, proportion, x-height and weight, measured from the letters themselves.
+
+![Super search](docs/screenshots/super-search.png)
+
+### Every glyph
+See every character, grouped by Unicode block, with search. Double-click a glyph to copy it. A right-click
+copies its code or HTML entity.
+
+![Glyphs](docs/screenshots/glyphs.png)
+
+### Playground
+Try a font on a sample page, with a second font for the body text. Tune sizes, line height and width, then copy
+the CSS or save it together with the font files.
+
+![Playground](docs/screenshots/playground.png)
+
+### Grid view, waterfall and themes
+A compact grid, a waterfall of sizes, a type tester, sliders for variable fonts, and five colour themes
+(Classic, Dark, Light, Midnight, Sepia).
+
+![Grid view in the light theme](docs/screenshots/grid-light.png)
+
+### And also
+* **Auto-activation:** drop a Photoshop, Illustrator, InDesign, PDF, SVG, Word or PowerPoint file onto the window,
+  or watch project folders. The fonts the document uses are switched on, and missing ones can come from Google Fonts.
+* **Sync:** keep collections, tags and favorites (and the fonts in your collections) in step across computers
+  through Dropbox, Google Drive, OneDrive or iCloud Drive.
+* **Search:** type several words to match names, styles, designers, foundries and tags.
+* **Autostart** when you sign in (Windows, macOS, Linux), and **hide to the system tray** when closing (Windows only).
+* Group styles into families your own way (right-click › *Change family name…*).
+
+## How activation works
+
+| System | What FontCraft does |
+|---|---|
+| Windows | registers the font file for your current session (no admin rights, nothing copied) |
+| macOS | places a link to the file in your user's `Library/Fonts` |
+| Linux | places a link in `~/.local/share/fonts/FontCraft` and refreshes the font cache |
+
+Some apps (for example older Adobe versions) only see newly activated fonts after you restart them.
+
+## Building from source
+
+Install [Rust](https://rustup.rs), then:
+
+```sh
+cargo build --release
+```
+
+On Linux you also need the usual window libraries, for example
+`sudo apt install libxkbcommon-dev libwayland-dev libgl1-mesa-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev`.
+
+Releases are built automatically by GitHub Actions (`.github/workflows/release.yml`).
+See [PUBLISHING.md](PUBLISHING.md) for how to make a new release.
+
+The screenshots show free fonts from Google Fonts.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

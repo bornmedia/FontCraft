@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+*.sh text eol=lf
+*.desktop text eol=lf
+*.plist text eol=lf
+*.yml text eol=lf
+*.png binary

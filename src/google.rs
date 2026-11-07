@@ -216,7 +216,16 @@ pub fn download_family(name: &str) -> Result<Vec<PathBuf>, String> {
             l.ends_with(".ttf") || l.ends_with(".otf")
         })
         .collect();
-    if files.iter().any(|(f, _)| f.starts_with("static/")) {
+    // Families made for several optical sizes ("Inter_18pt", "Inter_24pt"…) would turn into one
+    // family per size; their variable file keeps them together as one family.
+    let optical_sizes = files.iter().any(|(f, _)| {
+        let stem = f.trim_start_matches("static/").split('-').next().unwrap_or("");
+        stem.split('_').any(|part| part.len() > 2 && part.ends_with("pt") && part[..part.len() - 2].chars().all(|c| c.is_ascii_digit()))
+    });
+    let has_variable = files.iter().any(|(f, _)| !f.starts_with("static/"));
+    if optical_sizes && has_variable {
+        files.retain(|(f, _)| !f.starts_with("static/"));
+    } else if files.iter().any(|(f, _)| f.starts_with("static/")) {
         files.retain(|(f, _)| f.starts_with("static/"));
     }
     if files.is_empty() {
