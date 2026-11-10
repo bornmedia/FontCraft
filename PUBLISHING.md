@@ -24,11 +24,14 @@ Share this link, which always points to the newest version:
 
 ## 3. Releasing a newer version later
 
-1. Change the version number at the top of `Cargo.toml` (for example `version = "1.1.0"`).
+1. Change the version number at the top of `Cargo.toml` (for example `version = "1.2.0"`).
    You can also ask Craft Anything to do it.
-2. In GitHub Desktop write a short summary (for example "Version 1.1.0"), click **Commit to main**,
+2. Add a section for the new version at the top of `CHANGELOG.md` (for example `## 1.2.0` with a short list
+   of what changed). The release page shows it under "What's new". If you forget to raise the version number,
+   the **Release** workflow stops with a red cross instead of overwriting the previous release.
+3. In GitHub Desktop write a short summary (for example "Version 1.1.0"), click **Commit to main**,
    then **Push origin**.
-3. Run the **Release** workflow again (step 2 above).
+4. Run the **Release** workflow again (step 2 above).
 
 Everyone with FontCraft sees a "FontCraft 1.1.0 is available" notice at the bottom of the window.
 

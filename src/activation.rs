@@ -157,6 +157,7 @@ fn notify() {}
 
 /// Start FontCraft when the user logs in (so active fonts come back after a restart).
 pub fn set_launch_at_login(on: bool, hidden: bool) -> Result<(), String> {
+    #[cfg_attr(target_os = "macos", allow(unused_variables))]
     let flag = if hidden { " --minimized" } else { "" };
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     #[cfg(windows)]

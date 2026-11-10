@@ -25,7 +25,7 @@ impl FontCraftApp {
             ui.painter().rect_filled(rect, CornerRadius::same(5), p.hover);
         }
         if drop_hover {
-            ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.2, p.accent), StrokeKind::Inside);
+            ui.painter().rect_stroke(rect, CornerRadius::same(5), Stroke::new(1.2_f32, p.accent), StrokeKind::Inside);
         }
         let x0 = rect.left() + 8.0 + depth as f32 * 10.0;
         let mut arrow_resp = None;
@@ -207,19 +207,24 @@ impl FontCraftApp {
                     self.sidebar_tags(ui, &p, acts);
                     let (open, _) = self.section_header(ui, "sec:providers", "PROVIDERS", None);
                     if open {
-                        let all: Vec<usize> = self.gdl.values().flatten().copied().collect();
-                        let state = if all.is_empty() { (0, 1) } else { self.faces_state(&all) };
-                        let count = if self.gcat.is_empty() { None } else { Some(self.gcat.len()) };
-                        let (r, d, _) = Self::side_item(ui, &p, Id::new("side-google"), 1, Some((state, None)), "Google", count, self.view == View::Google, None);
-                        if r.on_hover_text("Over 1,900 free font families from Google Fonts").clicked() {
-                            acts.push(Action::SetView(View::Google));
-                        }
-                        if d.map(|d| d.clicked()).unwrap_or(false) {
-                            if all.is_empty() {
-                                acts.push(Action::SetView(View::Google));
-                            } else {
-                                let paths: Vec<String> = all.iter().map(|f| self.faces[*f].path_key.clone()).collect();
-                                acts.push(Action::SetPaths(paths, !(state.0 == state.1)));
+                        for prov in Provider::ALL {
+                            let prefix = format!("{}/", prov.tag());
+                            let all: Vec<usize> = self.gdl.iter().filter(|(k, _)| k.starts_with(&prefix)).flat_map(|(_, v)| v.iter().copied()).collect();
+                            let state = if all.is_empty() { (0, 1) } else { self.faces_state(&all) };
+                            let n = self.gcat.iter().filter(|g| g.provider == prov).count();
+                            let count = if n == 0 { None } else { Some(n) };
+                            let view = View::Online(prov);
+                            let (r, d, _) = Self::side_item(ui, &p, Id::new(("side-online", prov.tag())), 1, Some((state, None)), prov.short(), count, self.view == view, None);
+                            if r.on_hover_text(prov.about()).clicked() {
+                                acts.push(Action::SetView(view.clone()));
+                            }
+                            if d.map(|d| d.clicked()).unwrap_or(false) {
+                                if all.is_empty() {
+                                    acts.push(Action::SetView(view));
+                                } else {
+                                    let paths: Vec<String> = all.iter().map(|f| self.faces[*f].path_key.clone()).collect();
+                                    acts.push(Action::SetPaths(paths, !(state.0 == state.1)));
+                                }
                             }
                         }
                     }
@@ -273,6 +278,10 @@ impl FontCraftApp {
                     }
                 }
             }
+        }
+        let (r, _, _) = Self::side_item(ui, p, Id::new("side-finder"), 0, None, "Font finder", None, self.view == View::Finder, None);
+        if r.on_hover_text("Find the font in a picture").clicked() {
+            acts.push(Action::SetView(View::Finder));
         }
     }
 

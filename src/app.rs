@@ -1,6 +1,7 @@
 //! FontCraft: state, library logic and the frame loop. Drawing lives in `ui` and `details`.
 
 mod details;
+mod finder;
 mod gview;
 mod list;
 mod misc;
@@ -9,8 +10,10 @@ mod settings;
 mod sidebar;
 mod ui;
 
+pub use finder::is_image;
+
 use crate::activation;
-use crate::google::{self, GFamily, GMsg, Google};
+use crate::google::{self, GFamily, GMsg, Google, Provider};
 use crate::watcher;
 use crate::{autoact, sync};
 use crate::config::{self, Collection, Config, SortBy, Theme};
@@ -68,10 +71,11 @@ pub enum View {
     Active,
     Inactive,
     Installed,
-    Google,
+    Online(Provider),
     Folder(PathBuf),
     Collection(u64),
     Tag(String),
+    Finder,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -294,6 +298,8 @@ pub struct FontCraftApp {
     nodes: Vec<FolderNode>,
     node_index: HashMap<PathBuf, usize>,
     lib_names: HashSet<String>,
+    face_by_id: HashMap<u64, usize>,
+    finder: finder::Finder,
     scan_rx: Option<Receiver<ScanMsg>>,
     scan_progress: (usize, usize),
     scans_done: u32,
@@ -330,7 +336,8 @@ pub struct FontCraftApp {
     // Google Fonts
     google: Google,
     gcat: Vec<GFamily>,
-    gcat_state: GState,
+    /// the catalogue of each source (indexed by Provider::idx)
+    gstates: [GState; 3],
     gvisible: Vec<usize>,
     gsel: Option<usize>,
     gjobs: HashSet<String>,
@@ -350,9 +357,11 @@ pub struct FontCraftApp {
     sync_mtime: Option<SystemTime>,
     coll_hash: HashMap<u64, u64>,
     /// the native window, for showing and hiding it from the tray
+    #[cfg_attr(not(windows), allow(dead_code))]
     hwnd: std::sync::Arc<std::sync::atomic::AtomicIsize>,
     #[cfg(windows)]
     tray: Option<crate::tray::Tray>,
+    #[cfg_attr(not(windows), allow(dead_code))]
     quitting: bool,
 }
 
@@ -366,11 +375,13 @@ enum GState {
 impl FontCraftApp {
     fn scan_folders(cfg: &Config) -> Vec<PathBuf> {
         let mut v = cfg.folders.clone();
-        v.push(google::fonts_dir());
+        for p in Provider::ALL {
+            v.push(p.fonts_dir());
+        }
         v
     }
 
-    pub fn new(cc: &eframe::CreationContext<'_>, shot: Option<PathBuf>, minimized: bool) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, shot: Option<PathBuf>, minimized: bool, picture: Option<PathBuf>) -> Self {
         let mut cfg = Config::load();
         if cfg.machine_id.is_empty() {
             cfg.machine_id = format!("{:016x}", activation::fnv(&format!("{:?}{}", SystemTime::now(), std::process::id())));
@@ -380,11 +391,11 @@ impl FontCraftApp {
         let rx = library::spawn_scan(Self::scan_folders(&cfg), cache, cc.egui_ctx.clone());
         let view = if cfg.folders.is_empty() { View::Installed } else { View::All };
         let google = Google::new(cc.egui_ctx.clone());
-        google.load_catalog(shot.is_none());
+        google.load_catalogs(shot.is_none());
         let watch_list: watcher::WatchList = std::sync::Arc::new(std::sync::Mutex::new(cfg.folders.clone()));
         let watch_rx = watcher::spawn(watch_list.clone(), cc.egui_ctx.clone());
         let update_rx = if shot.is_none() && cfg.check_updates { crate::updates::check(cc.egui_ctx.clone()) } else { None };
-        Self {
+        let mut app = Self {
             update_rx,
             update: None,
             shape_range: [(0.0, 1.0); 4],
@@ -398,7 +409,7 @@ impl FontCraftApp {
             quitting: false,
             google,
             gcat: vec![],
-            gcat_state: GState::Loading,
+            gstates: [GState::Loading, GState::Loading, GState::Loading],
             gvisible: vec![],
             gsel: None,
             gjobs: HashSet::new(),
@@ -422,6 +433,8 @@ impl FontCraftApp {
             nodes: vec![],
             node_index: HashMap::new(),
             lib_names: HashSet::new(),
+            face_by_id: HashMap::new(),
+            finder: Default::default(),
             scan_rx: Some(rx),
             scan_progress: (0, 0),
             scans_done: 0,
@@ -454,7 +467,18 @@ impl FontCraftApp {
             tester_size: 28.0,
             search_focus: false,
             cfg,
+        };
+        match picture {
+            Some(p) if p.as_os_str().is_empty() => app.view = View::Finder,
+            Some(p) => app.finder_load_path(p),
+            None => {}
         }
+        if let Ok(s) = std::env::var("FONTCRAFT_SOURCE") {
+            if let Some(p) = Provider::ALL.iter().find(|p| p.tag() == s.to_lowercase().replace(' ', "")) {
+                app.view = View::Online(*p);
+            }
+        }
+        app
     }
 
     fn p(&self) -> Pal {
@@ -721,13 +745,15 @@ impl FontCraftApp {
             }
             fam.search_extra = extra.to_lowercase();
         }
-        // Which Google families are in the library (downloaded into google/fonts/<Family>/).
+        // Which online families are in the library (downloaded into <source dir>/<Family>/).
         self.gdl.clear();
-        let gdir = google::fonts_dir();
+        let gdirs: Vec<(Provider, PathBuf)> = Provider::ALL.iter().map(|p| (*p, p.fonts_dir())).collect();
         for (fi, f) in self.faces.iter().enumerate() {
-            if let Ok(rest) = f.meta.path.strip_prefix(&gdir) {
-                if let Some(first) = rest.components().next() {
-                    self.gdl.entry(first.as_os_str().to_string_lossy().to_string()).or_default().push(fi);
+            for (p, gdir) in &gdirs {
+                if let Ok(rest) = f.meta.path.strip_prefix(gdir) {
+                    if let Some(first) = rest.components().next() {
+                        self.gdl.entry(format!("{}/{}", p.tag(), first.as_os_str().to_string_lossy())).or_default().push(fi);
+                    }
                 }
             }
         }
@@ -746,6 +772,7 @@ impl FontCraftApp {
             }
         }
         self.lib_names = self.families.iter().filter(|f| !f.system).map(|f| f.name.clone()).collect();
+        self.face_by_id = self.faces.iter().enumerate().map(|(i, f)| (f.id, i)).collect();
         self.refresh_active();
         self.build_tree();
         let find = |n: &(String, bool), fams: &Vec<Family>| fams.iter().position(|f| f.name == n.0 && f.system == n.1);
@@ -887,7 +914,7 @@ impl FontCraftApp {
                     View::Favorites => self.in_named_set(f, &self.cfg.favorites),
                     View::Installed => f.system,
                     View::Collection(_) | View::Tag(_) => self.in_named_set(f, coll),
-                    View::Folder(_) | View::Google => false,
+                    View::Folder(_) | View::Online(_) | View::Finder => false,
                 }
             })
             .collect();
@@ -931,7 +958,7 @@ impl FontCraftApp {
             }
         }
         self.visible = v;
-        if self.view == View::Google {
+        if matches!(self.view, View::Online(_)) {
             self.compute_gvisible(&words);
         }
     }
@@ -941,22 +968,25 @@ impl FontCraftApp {
     }
 
     fn compute_gvisible(&mut self, words: &[&str]) {
+        let View::Online(prov) = self.view else { return };
         let mut v: Vec<usize> = (0..self.gcat.len())
             .filter(|i| {
                 let g = &self.gcat[*i];
                 let hit = |w: &str| {
                     g.lower.contains(w)
                         || g.category.to_lowercase().contains(w)
+                        || g.kind.to_lowercase().contains(w)
                         || g.designers.iter().any(|d| d.to_lowercase().contains(w))
                         || (w == "variable" && !g.axes.is_empty())
                 };
-                words.iter().all(|w| hit(w))
+                g.provider == prov
+                    && words.iter().all(|w| hit(w))
                     && self.gcategory.map(|c| g.category == c).unwrap_or(true)
                     && match self.filter {
                         Filter::All => true,
                         Filter::Variable => !g.axes.is_empty(),
                         Filter::Mono => g.category == "Monospace",
-                        Filter::Italic => g.styles.iter().any(|s| s.ends_with('i')),
+                        Filter::Italic => g.italic,
                     }
                     // Google publishes stroke thickness and width (not contrast or x-height)
                     && g.thickness.map(|t| in_range(t, self.shape_range[3])).unwrap_or(true)
@@ -967,7 +997,7 @@ impl FontCraftApp {
             SortBy::NameAz => {}
             SortBy::NameZa => v.reverse(),
             SortBy::Recent => v.sort_by(|a, b| self.gcat[*b].added.cmp(&self.gcat[*a].added)),
-            SortBy::Styles => v.sort_by_key(|i| std::cmp::Reverse(self.gcat[*i].styles.len())),
+            SortBy::Styles => v.sort_by_key(|i| std::cmp::Reverse(self.gcat[*i].nstyles)),
             SortBy::Popular => v.sort_by_key(|i| self.gcat[*i].popularity),
         }
         self.gvisible = v;
@@ -975,27 +1005,53 @@ impl FontCraftApp {
 
     /// Faces of a Google family that is in the library (empty when not downloaded).
     fn gfaces(&self, name: &str) -> &[usize] {
-        self.gdl.get(&google::safe(name)).map(|v| v.as_slice()).unwrap_or(&[])
+        self.pfaces(Provider::Google, name)
+    }
+
+    /// Faces of an online family that is in the library (empty when not downloaded).
+    fn pfaces(&self, p: Provider, name: &str) -> &[usize] {
+        self.gdl.get(&google::dl_key(p, name)).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    fn gfam_faces(&self, gi: usize) -> &[usize] {
+        let g = &self.gcat[gi];
+        self.pfaces(g.provider, &g.name)
+    }
+
+    fn gstate(&self, p: Provider) -> &GState {
+        &self.gstates[p.idx()]
     }
 
     fn poll_google(&mut self) {
         while let Ok(m) = self.google.rx.try_recv() {
             match m {
-                GMsg::Catalog(Ok(list)) => {
-                    self.gcat = list;
-                    self.gcat_state = GState::Ready;
+                GMsg::Catalog(p, Ok(list)) => {
+                    // the details card points into the list: close it
+                    self.gsel = None;
+                    self.gcat.retain(|g| g.provider != p);
+                    self.gcat.extend(list);
+                    self.gstates[p.idx()] = GState::Ready;
                 }
-                GMsg::Catalog(Err(e)) => self.gcat_state = GState::Failed(e),
+                GMsg::Catalog(p, Err(e)) => self.gstates[p.idx()] = GState::Failed(e),
                 GMsg::Removed => self.rescan(),
-                GMsg::Preview(name, Some(p)) => {
-                    self.google.previews.insert(name, Some(p));
+                GMsg::OpenInBrowser { name, url } => {
+                    self.ctx.open_url(egui::OpenUrl::new_tab(url));
+                    self.set_status(format!(
+                        "Font Squirrel asks for a quick check in your browser – {name} is added and activated as soon as the download is in your Downloads folder"
+                    ));
                 }
-                GMsg::Preview(name, None) => {
-                    self.google.previews.remove(&name);
-                    self.google.failed.insert(name);
+                GMsg::Preview(key, Some(path)) => {
+                    self.google.previews.insert(key, Some(path));
                 }
-                GMsg::Family { name, activate, result } => {
-                    self.gjobs.remove(&name);
+                GMsg::Preview(key, None) => {
+                    self.google.previews.remove(&key);
+                    // Font Squirrel asked us to wait: try again later instead of giving up
+                    if !(key.starts_with("fontsquirrel:") && crate::online::squirrel_blocked()) {
+                        self.google.failed.insert(key);
+                    }
+                }
+                GMsg::Family { key, name, activate, result } => {
+                    self.gjobs.remove(&key);
                     match result {
                         Ok(paths) => {
                             if activate {
@@ -1014,19 +1070,24 @@ impl FontCraftApp {
         }
     }
 
-    fn google_download(&mut self, name: &str, activate: bool) {
-        if self.shot.is_some() || self.gjobs.contains(name) {
+    /// Download a family of the online catalogue (by its index in it).
+    fn google_download(&mut self, gi: usize, activate: bool) {
+        let Some(g) = self.gcat.get(gi).cloned() else { return };
+        let key = g.key();
+        if self.shot.is_some() || self.gjobs.contains(&key) {
             return;
         }
-        self.gjobs.insert(name.to_string());
-        self.google.download(name.to_string(), activate);
-        self.set_status(format!("Downloading {name} from Google Fonts…"));
+        self.gjobs.insert(key);
+        self.set_status(format!("Downloading {} from {}…", g.name, g.provider.label()));
+        self.google.download(g, activate);
     }
 
-    fn google_remove(&mut self, name: &str) {
-        let paths: Vec<String> = self.gfaces(name).iter().map(|f| self.faces[*f].path_key.clone()).collect();
+    fn google_remove(&mut self, gi: usize) {
+        let Some(g) = self.gcat.get(gi).cloned() else { return };
+        let paths: Vec<String> = self.gfam_faces(gi).iter().map(|f| self.faces[*f].path_key.clone()).collect();
         self.set_paths(paths, false);
-        let dir = google::family_dir(name);
+        let dir = g.dir();
+        let name = g.name;
         // give the system a moment to let go of the files before deleting them
         let ctx = self.ctx.clone();
         let tx = self.google.tx.clone();
@@ -1050,7 +1111,8 @@ impl FontCraftApp {
             View::Folder(p) => self.node_index.get(p).map(|i| self.nodes[*i].name.clone()).unwrap_or_default(),
             View::Collection(id) => self.cfg.collections.iter().find(|c| c.id == *id).map(|c| c.name.clone()).unwrap_or_default(),
             View::Tag(t) => format!("#{t}"),
-            View::Google => "Google".into(),
+            View::Online(p) => p.label().into(),
+            View::Finder => "Font finder".into(),
         }
     }
 
@@ -1365,24 +1427,28 @@ impl FontCraftApp {
                 fams.insert(self.families[self.face_fam[i]].name.clone());
             }
         }
-        // Fonts the document needs that aren't on this computer: fetch them from Google Fonts.
+        // Fonts the document needs that aren't on this computer: fetch them from the free
+        // sources (Google Fonts first, then Fontshare, then Font Squirrel).
         let mut fetched = vec![];
-        if self.cfg.auto_google && self.gcat_state == GState::Ready {
+        if self.cfg.auto_google && !self.gcat.is_empty() {
             let ns = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_lowercase();
             let have: HashSet<String> = self.families.iter().map(|f| ns(&f.name)).collect();
+            let mut picks = vec![];
             for want in autoact::wanted_families(&fonts) {
                 if have.contains(&want) || fetched.len() >= 10 {
                     continue;
                 }
-                if let Some(g) = self.gcat.iter().find(|g| ns(&g.name) == want) {
-                    let name = g.name.clone();
-                    if self.gfaces(&name).is_empty() {
-                        fetched.push(name);
+                let best = (0..self.gcat.len()).filter(|i| ns(&self.gcat[*i].name) == want).min_by_key(|i| self.gcat[*i].provider.idx());
+                if let Some(gi) = best {
+                    let downloaded = Provider::ALL.iter().any(|p| !self.pfaces(*p, &self.gcat[gi].name).is_empty());
+                    if !downloaded {
+                        fetched.push(self.gcat[gi].name.clone());
+                        picks.push(gi);
                     }
                 }
             }
-            for name in &fetched {
-                self.google_download(name, true);
+            for gi in picks {
+                self.google_download(gi, true);
             }
         }
         let name = doc.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -1405,7 +1471,7 @@ impl FontCraftApp {
             if !msg.is_empty() {
                 msg.push_str(" · ");
             }
-            msg.push_str(&format!("downloading {} from Google Fonts", fetched.join(", ")));
+            msg.push_str(&format!("downloading {} from the free font sources", fetched.join(", ")));
         }
         self.set_status(msg);
     }
@@ -1482,10 +1548,10 @@ impl FontCraftApp {
         v.faint_bg_color = p.hover;
         v.code_bg_color = p.input;
         v.selection.bg_fill = p.accent.gamma_multiply(0.6);
-        v.selection.stroke = Stroke::new(1.0, p.text);
+        v.selection.stroke = Stroke::new(1.0_f32, p.text);
         v.hyperlink_color = p.accent;
-        v.window_stroke = Stroke::new(1.0, p.line);
-        v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, p.line);
+        v.window_stroke = Stroke::new(1.0_f32, p.line);
+        v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, p.line);
         v.widgets.noninteractive.fg_stroke.color = p.text;
         v.widgets.noninteractive.bg_fill = p.detail;
         v.widgets.inactive.bg_fill = p.input;
@@ -1576,7 +1642,7 @@ impl FontCraftApp {
     fn handle_screenshot(&mut self, ctx: &egui::Context) {
         let Some(shot) = &mut self.shot else { return };
         ctx.request_repaint();
-        let ready = self.scan_rx.is_none() && self.loader.pending() == 0;
+        let ready = self.scan_rx.is_none() && self.loader.pending() == 0 && self.finder.job.is_none() && self.finder.waiting.is_none();
         if ready || shot.started.elapsed().as_secs() > 45 {
             shot.frames += 1;
         }
@@ -1624,6 +1690,7 @@ impl eframe::App for FontCraftApp {
         self.poll_scan();
         self.poll_watch();
         self.poll_google();
+        self.poll_finder();
         if let Some(rx) = &self.update_rx {
             if let Ok(u) = rx.try_recv() {
                 self.update = u;
@@ -1647,13 +1714,15 @@ impl eframe::App for FontCraftApp {
         if self.sidebar_open {
             self.sidebar(ctx, &mut acts);
         }
-        if self.primary.is_none() && self.gsel.is_some() && self.view == View::Google {
+        if self.primary.is_none() && self.gsel.is_some() && matches!(self.view, View::Online(_) | View::Finder) {
             self.google_details(ctx, &mut acts);
         } else {
             self.details(ctx, &mut acts);
         }
-        if self.view == View::Google {
+        if matches!(self.view, View::Online(_)) {
             self.google_central(ctx, &mut acts);
+        } else if self.view == View::Finder {
+            self.finder_central(ctx, &mut acts);
         } else {
             self.central(ctx, &mut acts);
         }

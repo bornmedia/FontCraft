@@ -39,7 +39,7 @@ impl FontCraftApp {
             .min_width(320.0)
             .max_width(760.0)
             .resizable(true)
-            .frame(egui::Frame::new().fill(p.detail).inner_margin(egui::Margin::symmetric(18, 14)).stroke(Stroke::new(1.0, p.line)))
+            .frame(egui::Frame::new().fill(p.detail).inner_margin(egui::Margin::symmetric(18, 14)).stroke(Stroke::new(1.0_f32, p.line)))
             .show(ctx, |ui| {
                 let fam_name = self.families[fi].name.clone();
                 let nfaces = self.families[fi].faces.len();
@@ -60,8 +60,8 @@ impl FontCraftApp {
                 });
                 let src = if system {
                     "Installed on this computer".to_string()
-                } else if self.faces[primary].meta.path.starts_with(google::fonts_dir()) {
-                    "Google Fonts".to_string()
+                } else if let Some(prov) = google::Provider::ALL.iter().find(|p| self.faces[primary].meta.path.starts_with(p.fonts_dir())) {
+                    prov.label().to_string()
                 } else {
                     let path = self.faces[primary].meta.path.parent().map(|d| d.to_path_buf());
                     path.and_then(|d| self.node_index.get(&d).map(|i| self.nodes[*i].name.clone())).unwrap_or_default()
@@ -134,7 +134,7 @@ impl FontCraftApp {
                         let txt = RichText::new(l).size(13.0).color(if sel { p.text } else { p.weak });
                         let r = ui.add(egui::Button::new(txt).frame(false));
                         if sel {
-                            ui.painter().hline(r.rect.x_range(), r.rect.bottom() + 3.0, Stroke::new(2.0, p.accent));
+                            ui.painter().hline(r.rect.x_range(), r.rect.bottom() + 3.0, Stroke::new(2.0_f32, p.accent));
                         }
                         if r.clicked() {
                             self.tab = t;
@@ -145,7 +145,7 @@ impl FontCraftApp {
                     self.tab = Tab::Styles;
                 }
                 let r = ui.max_rect();
-                ui.painter().hline(r.x_range(), ui.cursor().top() + 3.0, Stroke::new(1.0, p.line));
+                ui.painter().hline(r.x_range(), ui.cursor().top() + 3.0, Stroke::new(1.0_f32, p.line));
                 ui.add_space(12.0);
                 match self.tab {
                     Tab::Styles => self.tab_styles(ui, fi, acts),
@@ -271,11 +271,11 @@ impl FontCraftApp {
             .filter(|s| idx.contains(s))
             .unwrap_or_else(|| idx.iter().copied().find(|i| all[*i].ch == 'A').unwrap_or(idx[0]));
         let g = &all[sel];
-        egui::Frame::new().fill(p.card).corner_radius(CornerRadius::same(8)).stroke(Stroke::new(1.0, p.line)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+        egui::Frame::new().fill(p.card).corner_radius(CornerRadius::same(8)).stroke(Stroke::new(1.0_f32, p.line)).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(vec2(130.0, 130.0), Sense::hover());
-                ui.painter().hline(r.x_range(), r.center().y + 30.0, Stroke::new(1.0, p.line));
+                ui.painter().hline(r.x_range(), r.center().y + 30.0, Stroke::new(1.0_f32, p.line));
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, g.ch.to_string(), FontId::new(96.0, ff.clone()), p.text);
                 ui.vertical(|ui| {
                     ui.add_space(14.0);
@@ -377,7 +377,7 @@ impl FontCraftApp {
                                 } else {
                                     p.card
                                 };
-                                ui.painter().rect(rect.shrink(1.0), CornerRadius::same(4), bg, Stroke::new(1.0, p.line), StrokeKind::Inside);
+                                ui.painter().rect(rect.shrink(1.0), CornerRadius::same(4), bg, Stroke::new(1.0_f32, p.line), StrokeKind::Inside);
                                 ui.painter_at(rect).text(rect.center(), Align2::CENTER_CENTER, all[gi].ch.to_string(), FontId::new(22.0, ff.clone()), p.text);
                                 let resp = resp.on_hover_text(format!(
                                     "U+{:04X}{}  ·  double-click to copy",

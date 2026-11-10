@@ -27,7 +27,7 @@ Get the newest version from the **[Releases page](../../releases/latest)**:
 FontCraft tells you when a newer version is out. You can turn this off in Settings.
 
 FontCraft doesn't include any font files. It shows the fonts already on your computer, the folders you add,
-and the Google Fonts you choose to download.
+and the free fonts you choose to download from Google Fonts, Fontshare or Font Squirrel.
 
 ## What it can do
 
@@ -48,10 +48,36 @@ activate a family.
 
 ![Google Fonts](docs/screenshots/google-fonts.png)
 
+### Fontshare and Font Squirrel
+Two more free sources sit next to Google under *Providers*:
+
+* **Fontshare** – about 100 high-quality families from the Indian Type Foundry, free for personal and commercial
+  use. Live previews, filters and one-click download and activation, just like Google Fonts.
+* **Font Squirrel** – about 1,000 hand-picked families that are free for commercial use. Font Squirrel only hands
+  its files to a web browser, so clicking the dot opens the download in your browser; FontCraft notices the file in
+  your Downloads folder, adds the family and activates it. Previews appear once a family is in your library.
+
+![Fontshare](docs/screenshots/fontshare.png)
+
+Adobe Fonts is not included: its fonts can only be switched on through Adobe's own Creative Cloud app.
+
 ### Super search
 Find fonts by how they look: contrast, proportion, x-height and weight, measured from the letters themselves.
 
 ![Super search](docs/screenshots/super-search.png)
+
+### Font finder: which font is in this picture?
+Drop, open or paste (Ctrl+V) a picture with text: a screenshot, a photo of a poster, a logo. FontCraft finds the
+letters, reads them, and compares their shapes with **every font in your library, on your computer and on Google
+Fonts**, closest first. Activate a match with one click, or get a Google family straight into your library.
+
+* Drag a box around the text you care about; click a letter to leave it out.
+* Fix misread letters by typing the text you see. Joined-up script works best this way, because whole words are then compared.
+* Everything happens on your computer and the picture is never uploaded. For Google Fonts, FontCraft fetches just the
+  letters of each family once (a few KB each), then it works offline.
+* You can also open a picture with FontCraft ("Open with…"), or start it with `--finder`.
+
+![Font finder](docs/screenshots/font-finder.png)
 
 ### Every glyph
 See every character, grouped by Unicode block, with search. Double-click a glyph to copy it. A right-click
@@ -104,7 +130,8 @@ On Linux you also need the usual window libraries, for example
 Releases are built automatically by GitHub Actions (`.github/workflows/release.yml`).
 See [PUBLISHING.md](PUBLISHING.md) for how to make a new release.
 
-The screenshots show free fonts from Google Fonts.
+The screenshots show free fonts from Google Fonts and Fontshare. What changed in each version is in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

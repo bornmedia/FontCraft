@@ -447,11 +447,11 @@ impl FontCraftApp {
                     let resp = ui.interact(rect, id, Sense::click_and_drag());
                     let selected = self.selected.contains(&fi);
                     let stroke = if selected {
-                        Stroke::new(1.5, p.accent)
+                        Stroke::new(1.5_f32, p.accent)
                     } else if resp.hovered() {
-                        Stroke::new(1.0, p.weak)
+                        Stroke::new(1.0_f32, p.weak)
                     } else {
-                        Stroke::new(1.0, p.line)
+                        Stroke::new(1.0_f32, p.line)
                     };
                     ui.painter().rect(rect, CornerRadius::same(8), bg.unwrap_or(p.card), stroke, StrokeKind::Inside);
                     let fam = &self.families[fi];

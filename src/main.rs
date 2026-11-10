@@ -5,8 +5,10 @@ mod app;
 mod config;
 mod extras;
 mod fontload;
+mod fontmatch;
 mod google;
 mod library;
+mod online;
 mod sync;
 mod autoact;
 mod uifont;
@@ -46,6 +48,8 @@ fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let mut shot = None;
     let mut minimized = false;
+    // a picture given on the command line (\"Open with FontCraft\") goes to the Font finder
+    let mut picture = None;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -56,6 +60,16 @@ fn main() -> eframe::Result<()> {
                 }
             }
             "--minimized" => minimized = true,
+            // open straight on an online source: --source google|fontshare|fontsquirrel
+            "--source" => {
+                if let Some(s) = args.get(i + 1) {
+                    std::env::set_var("FONTCRAFT_SOURCE", s);
+                    i += 1;
+                }
+            }
+            // open straight on the Font finder page
+            "--finder" => picture = Some(PathBuf::new()),
+            a if !a.starts_with("--") && app::is_image(std::path::Path::new(a)) => picture = Some(PathBuf::from(a)),
             _ => {}
         }
         i += 1;
@@ -73,6 +87,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "FontCraft",
         options,
-        Box::new(move |cc| Ok(Box::new(app::FontCraftApp::new(cc, shot, minimized)))),
+        Box::new(move |cc| Ok(Box::new(app::FontCraftApp::new(cc, shot, minimized, picture)))),
     )
 }

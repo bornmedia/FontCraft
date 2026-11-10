@@ -17,9 +17,9 @@ pub(super) fn paint_dot(painter: &Painter, c: egui::Pos2, state: (usize, usize),
     if n > 0 && a == n {
         painter.circle_filled(c, r, p.accent);
     } else if a > 0 {
-        painter.circle_stroke(c, r - 0.6, Stroke::new(1.6, p.accent));
+        painter.circle_stroke(c, r - 0.6, Stroke::new(1.6_f32, p.accent));
     } else {
-        painter.circle_stroke(c, r - 0.6, Stroke::new(1.4, p.text));
+        painter.circle_stroke(c, r - 0.6, Stroke::new(1.4_f32, p.text));
     }
 }
 
@@ -45,11 +45,12 @@ pub(super) enum Icon {
     Help,
     Filter,
     Plus,
+    Finder,
 }
 
 pub(super) fn paint_icon(painter: &Painter, r: Rect, icon: Icon, col: Color32, bg: Color32) {
     let c = r.center();
-    let s = Stroke::new(1.4, col);
+    let s = Stroke::new(1.4_f32, col);
     match icon {
         Icon::Lines => {
             for dy in [-5.0, 0.0, 5.0] {
@@ -74,7 +75,7 @@ pub(super) fn paint_icon(painter: &Painter, r: Rect, icon: Icon, col: Color32, b
                 CornerRadius { nw: 4, sw: 4, ne: 0, se: 0 },
                 col,
             );
-            painter.rect_stroke(rr, CornerRadius::same(4), Stroke::new(1.2, col), StrokeKind::Inside);
+            painter.rect_stroke(rr, CornerRadius::same(4), Stroke::new(1.2_f32, col), StrokeKind::Inside);
         }
         Icon::Align => {
             for (dy, w) in [(-5.0, 14.0), (-1.7, 9.0), (1.7, 14.0), (5.0, 9.0)] {
@@ -117,7 +118,7 @@ pub(super) fn paint_icon(painter: &Painter, r: Rect, icon: Icon, col: Color32, b
                 let a = k as f32 * std::f32::consts::TAU / 8.0;
                 painter.line_segment(
                     [pos2(c.x + 5.0 * a.cos(), c.y + 5.0 * a.sin()), pos2(c.x + 8.0 * a.cos(), c.y + 8.0 * a.sin())],
-                    Stroke::new(2.2, col),
+                    Stroke::new(2.2_f32, col),
                 );
             }
             painter.circle_stroke(c, 5.0, s);
@@ -132,10 +133,20 @@ pub(super) fn paint_icon(painter: &Painter, r: Rect, icon: Icon, col: Color32, b
                 painter.hline(c.x - w / 2.0..=c.x + w / 2.0, c.y + dy, s);
             }
         }
+        Icon::Finder => {
+            // a picture frame with a magnifying glass
+            let fr = Rect::from_center_size(c + vec2(-2.0, -1.5), vec2(15.0, 12.0));
+            painter.rect_stroke(fr, CornerRadius::same(2), s, StrokeKind::Middle);
+            painter.text(fr.center(), Align2::CENTER_CENTER, "A", FontId::proportional(8.5), col);
+            let g = c + vec2(5.0, 5.0);
+            painter.circle_filled(g, 4.2, bg);
+            painter.circle_stroke(g, 3.2, Stroke::new(1.5_f32, col));
+            painter.line_segment([g + vec2(2.3, 2.3), g + vec2(5.0, 5.0)], Stroke::new(1.8_f32, col));
+        }
         Icon::Plus => {
             painter.circle_filled(c, 7.0, col);
-            painter.hline(c.x - 3.5..=c.x + 3.5, c.y, Stroke::new(1.6, bg));
-            painter.vline(c.x, c.y - 3.5..=c.y + 3.5, Stroke::new(1.6, bg));
+            painter.hline(c.x - 3.5..=c.x + 3.5, c.y, Stroke::new(1.6_f32, bg));
+            painter.vline(c.x, c.y - 3.5..=c.y + 3.5, Stroke::new(1.6_f32, bg));
         }
     }
 }
@@ -147,8 +158,8 @@ pub(super) fn range_slider(ui: &mut Ui, id: Id, range: &mut (f32, f32), p: &Pal)
     let to_v = |px: f32| ((px - rect.left() - 6.0) / (rect.width() - 12.0)).clamp(0.0, 1.0);
     let painter = ui.painter();
     let cy = rect.center().y;
-    painter.hline(x(0.0)..=x(1.0), cy, Stroke::new(3.0, p.toggle_off));
-    painter.hline(x(range.0)..=x(range.1), cy, Stroke::new(3.0, p.accent));
+    painter.hline(x(0.0)..=x(1.0), cy, Stroke::new(3.0_f32, p.toggle_off));
+    painter.hline(x(range.0)..=x(range.1), cy, Stroke::new(3.0_f32, p.accent));
     if let Some(pos) = resp.interact_pointer_pos() {
         let v = to_v(pos.x);
         let which = ui.memory_mut(|m| {
@@ -169,7 +180,7 @@ pub(super) fn range_slider(ui: &mut Ui, id: Id, range: &mut (f32, f32), p: &Pal)
         }
     }
     for v in [range.0, range.1] {
-        painter.circle(pos2(x(v), cy), 6.0, Color32::WHITE, Stroke::new(1.5, p.accent));
+        painter.circle(pos2(x(v), cy), 6.0, Color32::WHITE, Stroke::new(1.5_f32, p.accent));
     }
 }
 
@@ -292,7 +303,7 @@ impl FontCraftApp {
                         (SortBy::NameZa, "Name Z–A"),
                         (SortBy::Recent, "Recently added"),
                         (SortBy::Styles, "Most styles"),
-                        (SortBy::Popular, "Most popular (Google)"),
+                        (SortBy::Popular, "Most popular (online sources)"),
                     ] {
                         if ui.radio_value(&mut self.cfg.sort, s, l).changed() {
                             self.dirty = true;
@@ -316,7 +327,7 @@ impl FontCraftApp {
                 egui::Frame::new()
                     .fill(p.content)
                     .inner_margin(egui::Margin { left: 14, right: 10, top: 0, bottom: 0 })
-                    .stroke(Stroke::new(1.0, p.line)),
+                    .stroke(Stroke::new(1.0_f32, p.line)),
             )
             .show(ctx, |ui| {
                 ui.horizontal_centered(|ui| {
@@ -384,6 +395,12 @@ impl FontCraftApp {
                     if let Some(dir) = rfd::FileDialog::new().set_title("Add a font folder").pick_folder() {
                         self.add_folder(dir);
                     }
+                }
+                if icon_button(ui, &p, sz, Icon::Finder, self.view == View::Finder, "Font finder: find the font in a picture").clicked() {
+                    self.view = View::Finder;
+                    self.selected.clear();
+                    self.primary = None;
+                    self.gsel = None;
                 }
                 if icon_button(ui, &p, sz, Icon::Theme, false, "Colour theme (click to switch)").clicked() {
                     self.cfg.theme = match self.cfg.theme {

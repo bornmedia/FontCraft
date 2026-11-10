@@ -56,7 +56,7 @@ impl FontCraftApp {
                     r,
                     CornerRadius::same(6),
                     pp.content,
-                    Stroke::new(if chosen { 2.0 } else { 1.0 }, if chosen { pp.accent } else { p.line }),
+                    Stroke::new(if chosen { 2.0 } else { 1.0_f32 }, if chosen { pp.accent } else { p.line }),
                     StrokeKind::Inside,
                 );
                 ui.painter().rect_filled(Rect::from_min_size(r.min + vec2(1.0, 1.0), vec2(18.0, r.height() - 2.0)), CornerRadius::same(5), pp.side);
@@ -218,7 +218,7 @@ whenever a document there is saved or added, its fonts are activated automatical
             }
         });
         if ui
-            .checkbox(&mut self.cfg.auto_google, "Download missing fonts from Google Fonts when a document needs them")
+            .checkbox(&mut self.cfg.auto_google, "Download missing fonts from Google Fonts, Fontshare or Font Squirrel when a document needs them")
             .changed()
         {
             self.dirty = true;
@@ -263,7 +263,7 @@ favourites there – plus copies of the fonts in your collections – and every 
         for t in [
             "Your font folders are watched: fonts you copy into them appear within seconds, deleted ones disappear.",
             "The filter button next to the search has Super search: find fonts by contrast, proportion, x-height and weight.",
-            "Providers › Google: click the dot next to any Google font to download and activate it.",
+            "Providers › Google, Fontshare and Font Squirrel: click the dot next to any font there to download and activate it.",
             "Drag fonts onto a collection, tag or Favorites in the sidebar.",
             "Ctrl/Cmd-click and Shift-click select several fonts; Space switches them on or off.",
             "Ctrl/Cmd+F jumps to the search. Several words narrow it down (e.g. serif heavy variable).",

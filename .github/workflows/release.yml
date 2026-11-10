@@ -36,6 +36,11 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           else
             v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+            # stop before building if this version was already released
+            if git ls-remote --exit-code --tags origin "refs/tags/v$v" >/dev/null; then
+              echo "::error::Version $v was already released. Raise the version at the top of Cargo.toml first."
+              exit 1
+            fi
             echo "tag=v$v" >> "$GITHUB_OUTPUT"
           fi
 
@@ -95,7 +100,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist/FontCraft | Out-Null
           Copy-Item target/${{ matrix.target }}/release/fontcraft.exe dist/FontCraft/FontCraft.exe
-          Copy-Item README.md, LICENSE dist/FontCraft/
+          Copy-Item README.md, CHANGELOG.md, LICENSE dist/FontCraft/
           Compress-Archive -Path dist/FontCraft -DestinationPath dist/${{ matrix.name }}.zip
           Copy-Item dist/FontCraft/FontCraft.exe dist/${{ matrix.name }}.exe
 
@@ -118,7 +123,7 @@ jobs:
         run: |
           mkdir -p dist/FontCraft
           cp target/${{ matrix.target }}/release/fontcraft dist/FontCraft/fontcraft
-          cp packaging/linux/fontcraft.desktop packaging/linux/install.sh README.md LICENSE dist/FontCraft/
+          cp packaging/linux/fontcraft.desktop packaging/linux/install.sh README.md CHANGELOG.md LICENSE dist/FontCraft/
           chmod +x dist/FontCraft/fontcraft dist/FontCraft/install.sh
           tar -C dist -czf dist/${{ matrix.name }}.tar.gz FontCraft
 
@@ -143,29 +148,48 @@ jobs:
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          VERSION="${{ needs.version.outputs.tag }}"; VERSION="${VERSION#v}"
+          # the part of CHANGELOG.md under "## <version>", up to the next version
+          awk -v v="$VERSION" '
+            /^## / { if (on) exit; if ($2 == v) { on = 1; next } }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then
+            { echo "## What's new"; cat notes.md; echo; echo "---"; echo; } > whatsnew.md
+          else
+            echo "No section for $VERSION in CHANGELOG.md, publishing without a list of changes."
+            : > whatsnew.md
+          fi
+          cat whatsnew.md - > release-notes.md <<'EOF'
+          ## Download FontCraft
+
+          | Your computer | File |
+          |---|---|
+          | **Windows** (10 / 11) | `FontCraft-Windows-x64.exe` (just run it) or the `.zip` |
+          | **Mac with Apple chip** (M1, M2, M3, M4…) | `FontCraft-macOS-AppleSilicon.zip` |
+          | **Mac with Intel chip** | `FontCraft-macOS-Intel.zip` |
+          | **Linux** | `FontCraft-Linux-x64.tar.gz` |
+
+          **First start on a Mac:** unzip, move FontCraft to Applications, then right-click it and choose *Open*
+          (the app isn't signed with a paid Apple certificate, so macOS asks once).
+
+          **Windows:** if SmartScreen warns about an unknown app, click *More info* › *Run anyway*.
+
+          **Linux:** unpack, then run `./install.sh` to add FontCraft to your app menu (or start `./fontcraft` directly).
+          EOF
+          cat release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: FontCraft ${{ needs.version.outputs.tag }}
           make_latest: true
           files: dist/*
-          body: |
-            ## Download FontCraft
-
-            | Your computer | File |
-            |---|---|
-            | **Windows** (10 / 11) | `FontCraft-Windows-x64.exe` (just run it) or the `.zip` |
-            | **Mac with Apple chip** (M1, M2, M3, M4…) | `FontCraft-macOS-AppleSilicon.zip` |
-            | **Mac with Intel chip** | `FontCraft-macOS-Intel.zip` |
-            | **Linux** | `FontCraft-Linux-x64.tar.gz` |
-
-            **First start on a Mac:** unzip, move FontCraft to Applications, then right-click it and choose *Open*
-            (the app isn't signed with a paid Apple certificate, so macOS asks once).
-
-            **Windows:** if SmartScreen warns about an unknown app, click *More info* › *Run anyway*.
-
-            **Linux:** unpack, then run `./install.sh` to add FontCraft to your app menu (or start `./fontcraft` directly).
+          body_path: release-notes.md

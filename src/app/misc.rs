@@ -111,6 +111,8 @@ impl FontCraftApp {
                 self.add_folder(p);
             } else if library::is_font_file(&p) {
                 files.push(p);
+            } else if finder::is_image(&p) {
+                self.finder_load_path(p);
             } else if crate::autoact::is_document(&p) {
                 self.autoact.check(p, false);
             }
@@ -126,7 +128,8 @@ impl FontCraftApp {
             let r = ctx.screen_rect();
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("drop")));
             painter.rect_filled(r, CornerRadius::ZERO, Color32::from_black_alpha(150));
-            painter.text(r.center(), Align2::CENTER_CENTER, "Drop fonts or folders to add them to FontCraft", FontId::proportional(22.0), Color32::WHITE);
+            let msg = if self.view == View::Finder { "Drop a picture to find its font" } else { "Drop fonts or folders to add them – or a picture to find its font" };
+            painter.text(r.center(), Align2::CENTER_CENTER, msg, FontId::proportional(22.0), Color32::WHITE);
         }
         if let Some(pl) = egui::DragAndDrop::payload::<DragFams>(ctx) {
             if let Some(pos) = ctx.pointer_interact_pos() {
