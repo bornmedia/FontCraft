@@ -126,9 +126,12 @@ A compact grid, a waterfall of sizes, a type tester, sliders for variable fonts,
 
 | System | What FontCraft does |
 |---|---|
-| Windows | registers the font file for your current session (no admin rights, nothing copied) |
+| Windows | places the font in your personal font folder and font list while it is active – a link when it's on the same drive, a copy from other drives – and loads it (no admin rights) |
 | macOS | places a link to the file in your user's `Library/Fonts` |
 | Linux | places a link in `~/.local/share/fonts/FontCraft` and refreshes the font cache |
+
+Because the file's place is known to the system, "Package" in Illustrator, InDesign and similar apps can copy
+activated fonts into the package, just like installed ones.
 
 Some apps (for example older Adobe versions) only see newly activated fonts after you restart them.
 

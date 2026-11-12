@@ -750,6 +750,10 @@ impl FontCraftApp {
                 if !paths.is_empty() {
                     self.spawn_activation(paths, true, true);
                 }
+                // keep the user's font list (used by "Package" in Illustrator/InDesign) in step
+                // with the active fonts, including ones in network folders that are away right now
+                let all: Vec<PathBuf> = self.cfg.active.iter().map(PathBuf::from).collect();
+                std::thread::spawn(move || activation::sync_listed(&all));
             }
             if self.shot.is_none() {
                 self.sync_all_collections();

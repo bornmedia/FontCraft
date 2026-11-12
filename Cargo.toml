@@ -1,6 +1,6 @@
 [package]
 name = "fontcraft"
-version = "1.2.1"
+version = "1.2.5"
 edition = "2021"
 license = "MIT"
 description = "FontCraft - a free font manager: organise, preview and activate fonts without installing them."
@@ -41,6 +41,8 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Com",
     # telling network drives (mapped letters) from local ones
     "Win32_Storage_FileSystem",
+    # listing active fonts in the user's font list, so "Package" in Illustrator/InDesign finds their files
+    "Win32_System_Registry",
 ] }
 
 [profile.dev]

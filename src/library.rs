@@ -348,11 +348,16 @@ pub fn spawn_scan(folders: Vec<PathBuf>, cache: ScanCache, ctx: egui::Context) -
     std::thread::spawn(move || {
         let mut files: Vec<(PathBuf, Origin)> = Vec::new();
         let mut seen = BTreeSet::new();
+        // fonts FontCraft itself put in the system's font folders while they're active
+        let placed = crate::activation::placed_files();
         for dir in system_font_dirs() {
             for e in walkdir::WalkDir::new(&dir).follow_links(false).into_iter().filter_map(|e| e.ok()) {
                 let p = e.path();
                 let name = e.file_name().to_string_lossy();
-                if name.starts_with(crate::activation::LINK_PREFIX) || p.components().any(|c| c.as_os_str() == "FontCraft") {
+                if name.starts_with(crate::activation::LINK_PREFIX)
+                    || p.components().any(|c| c.as_os_str() == "FontCraft")
+                    || placed.contains(&p.to_string_lossy().to_lowercase())
+                {
                     continue;
                 }
                 if e.file_type().is_file() && is_font_file(p) && seen.insert(p.to_path_buf()) {

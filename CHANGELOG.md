@@ -1,10 +1,21 @@
 # What's new in FontCraft
 
-## 1.2.1
+## 1.2.5
 
 ### A new face for FontCraft
 * A new app icon: the platypus. It shows up on the window, the taskbar and the tray, on FontCraft.exe, in the
   Mac app and in the Linux app menu.
+
+### Fixed: "Package" in Illustrator, InDesign and other apps now includes activated fonts
+* Collecting fonts into a package only worked for system fonts, because these apps only look in the Windows
+  font folders. On Windows, an active font is now placed in your personal font folder and font list – just
+  like a font installed "for me only", under exactly the name Windows itself would use (Illustrator finds
+  the file through that name) – so it is copied into the package with its own file name. Fonts on the same drive are only
+  linked there (no extra space); fonts from another drive or a network folder are copied while they are
+  active. Deactivating removes them again, and FontCraft tidies up leftovers every time it starts.
+  Restart the Adobe app once after updating.
+* On macOS and Linux, activated fonts now appear as the font file itself (a hard link) instead of a shortcut
+  whenever the font is on the same drive, so packaging copies the real font.
 
 ### New theme: Sand
 * A dark theme with the warm sand tone of the icon for highlights: active dots, sliders, buttons and selections.
