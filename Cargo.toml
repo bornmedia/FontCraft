@@ -1,6 +1,6 @@
 [package]
 name = "fontcraft"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 license = "MIT"
 description = "FontCraft - a free font manager: organise, preview and activate fonts without installing them."
@@ -34,6 +34,8 @@ windows-sys = { version = "0.59", features = [
     # where Windows keeps the person's Downloads folder (it can be moved)
     "Win32_UI_Shell",
     "Win32_System_Com",
+    # telling network drives (mapped letters) from local ones
+    "Win32_Storage_FileSystem",
 ] }
 
 [profile.dev]

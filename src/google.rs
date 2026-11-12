@@ -505,7 +505,6 @@ pub enum GMsg {
     Family { key: String, name: String, activate: bool, result: Result<Vec<PathBuf>, String> },
     /// a source that only hands out files to a browser: open this download there
     OpenInBrowser { name: String, url: String },
-    Removed,
 }
 
 type Queue = Arc<Mutex<VecDeque<GFamily>>>;

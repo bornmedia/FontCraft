@@ -112,7 +112,7 @@ mod tests {
             .iter()
             .filter_map(|k| ab_glyph::FontRef::try_from_slice(defs.font_data[k].font.as_ref()).ok())
             .collect();
-        let missing: Vec<char> = "❤✖✔➕▼▲⏵…–“”·›•€äöüß"
+        let missing: Vec<char> = "❤✖✔➕▼▲⏵…–“”·›•€äöüß⚠—"
             .chars()
             .filter(|c| !faces.iter().any(|f| ab_glyph::Font::glyph_id(f, *c).0 != 0))
             .collect();

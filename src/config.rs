@@ -80,6 +80,8 @@ pub struct Config {
     pub start_hidden: bool,
     /// closing the window hides it in the system tray (Windows)
     pub hide_to_tray: bool,
+    /// the folder system fonts were last moved into instead of being deleted
+    pub moved_dir: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -115,6 +117,7 @@ impl Default for Config {
             family_overrides: BTreeMap::new(),
             start_hidden: true,
             hide_to_tray: false,
+            moved_dir: None,
             tester_text: "Typography is the craft of endowing human language with a durable visual form. \
 Good type disappears into the reading; great type makes the reading a pleasure.\n\n\
 ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789 !?&@#%(){}[]"

@@ -307,7 +307,9 @@ fn file_stamp(p: &Path) -> Option<(u64, u64)> {
 
 pub enum ScanMsg {
     Progress { done: usize, total: usize },
-    Done { faces: Vec<(FaceMeta, Origin)>, cache: ScanCache },
+    /// `offline`: library folders that could not be reached (a network share that is away)
+    /// `network`: library folders that live on another computer
+    Done { faces: Vec<(FaceMeta, Origin)>, cache: ScanCache, offline: Vec<PathBuf>, network: Vec<PathBuf> },
 }
 
 pub fn system_font_dirs() -> Vec<PathBuf> {
@@ -358,7 +360,22 @@ pub fn spawn_scan(folders: Vec<PathBuf>, cache: ScanCache, ctx: egui::Context) -
                 }
             }
         }
+        let mut offline = vec![];
+        let mut network = vec![];
         for dir in &folders {
+            let net = crate::netfs::is_network_path(dir);
+            if net {
+                network.push(dir.clone());
+            }
+            let ok = if net {
+                crate::netfs::reachable(dir, std::time::Duration::from_secs(4))
+            } else {
+                dir.is_dir()
+            };
+            if !ok {
+                offline.push(dir.clone());
+                continue;
+            }
             for e in walkdir::WalkDir::new(dir).follow_links(true).into_iter().filter_map(|e| e.ok()) {
                 let p = e.path();
                 if e.file_type().is_file() && is_font_file(p) && seen.insert(p.to_path_buf()) {
@@ -385,7 +402,13 @@ pub fn spawn_scan(folders: Vec<PathBuf>, cache: ScanCache, ctx: egui::Context) -
                 ctx.request_repaint();
             }
         }
-        let _ = tx.send(ScanMsg::Done { faces, cache: new_cache });
+        // keep what is known about files in folders that are away, so they are quick when they're back
+        for (k, v) in cache {
+            if offline.iter().any(|o| Path::new(&k).starts_with(o)) {
+                new_cache.entry(k).or_insert(v);
+            }
+        }
+        let _ = tx.send(ScanMsg::Done { faces, cache: new_cache, offline, network });
         ctx.request_repaint();
     });
     rx

@@ -200,6 +200,10 @@ impl FontCraftApp {
             acts.push(Action::AddFolderDialog);
             ui.close_menu();
         }
+        if ui.button("Add network folder…").on_hover_text("A shared folder on a server, a NAS or another computer").clicked() {
+            acts.push(Action::NetworkFolderDialog);
+            ui.close_menu();
+        }
         if ui.button("Import fonts…").clicked() {
             acts.push(Action::ImportDialog);
             ui.close_menu();
@@ -247,12 +251,31 @@ impl FontCraftApp {
                 let te = egui::TextEdit::singleline(&mut self.search)
                     .hint_text(RichText::new("Search fonts...").color(p.weak))
                     .horizontal_align(Align::Center)
-                    .margin(vec2(10.0, 4.0))
+                    .margin(egui::Margin { left: 26, right: 26, top: 4, bottom: 4 })
                     .frame(true);
                 let resp = ui.put(sr, te);
                 if self.search_focus {
                     resp.request_focus();
                     self.search_focus = false;
+                }
+                // a little X that empties the search in one click (Esc in the box does the same)
+                if !self.search.is_empty() {
+                    let xr = Rect::from_center_size(pos2(sr.right() - 13.0, sr.center().y), vec2(20.0, 20.0));
+                    let xresp = ui.interact(xr, Id::new("searchclear"), Sense::click());
+                    let col = if xresp.hovered() { p.text } else { p.weak };
+                    if xresp.hovered() {
+                        ui.painter().circle_filled(xr.center(), 9.0, p.sel);
+                    }
+                    let c = xr.center();
+                    let s = 3.6;
+                    let st = Stroke::new(1.6_f32, col);
+                    ui.painter().line_segment([c + vec2(-s, -s), c + vec2(s, s)], st);
+                    ui.painter().line_segment([c + vec2(-s, s), c + vec2(s, -s)], st);
+                    let esc = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+                    if xresp.on_hover_text("Clear the search").clicked() || esc {
+                        self.search.clear();
+                        resp.request_focus();
+                    }
                 }
                 let fr = Rect::from_center_size(pos2(sr.right() + 18.0, sr.center().y), vec2(24.0, 24.0));
                 let fresp = ui.interact(fr, Id::new("filterbtn"), Sense::click());

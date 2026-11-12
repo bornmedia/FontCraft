@@ -8,7 +8,9 @@ mod fontload;
 mod fontmatch;
 mod google;
 mod library;
+mod netfs;
 mod online;
+mod remove;
 mod sync;
 mod autoact;
 mod uifont;
@@ -74,16 +76,30 @@ fn main() -> eframe::Result<()> {
         }
         i += 1;
     }
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("FontCraft")
-            .with_app_id("fontcraft")
-            .with_inner_size([1360.0, 840.0])
-            .with_min_inner_size([960.0, 560.0])
-            .with_drag_and_drop(true)
-            .with_icon(icon()),
-        ..Default::default()
-    };
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("FontCraft")
+        .with_app_id("fontcraft")
+        .with_inner_size([1360.0, 840.0])
+        .with_min_inner_size([960.0, 560.0])
+        .with_drag_and_drop(true)
+        .with_icon(icon());
+    if shot.is_some() {
+        // a picture for a check: don't take the focus or cover what the person is doing
+        viewport = viewport.with_active(false);
+        #[cfg(windows)]
+        {
+            viewport = viewport.with_window_level(egui::WindowLevel::AlwaysOnBottom);
+        }
+    }
+    #[allow(unused_mut)]
+    let mut options = eframe::NativeOptions { viewport, ..Default::default() };
+    #[cfg(target_os = "macos")]
+    if shot.is_some() {
+        options.event_loop_builder = Some(Box::new(|b| {
+            use winit::platform::macos::EventLoopBuilderExtMacOS;
+            b.with_activate_ignoring_other_apps(false);
+        }));
+    }
     eframe::run_native(
         "FontCraft",
         options,

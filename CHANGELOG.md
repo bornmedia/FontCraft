@@ -1,5 +1,37 @@
 # What's new in FontCraft
 
+## 1.2.0
+
+### New: delete fonts from inside FontCraft
+* Right-click a family (or select several and press **Delete**, or use "Delete…" in the selection bar).
+  FontCraft asks first, with its own warning for each kind of font:
+  * **Online sources** (Google Fonts, Fontshare, Font Squirrel): the fonts are deactivated and FontCraft's local
+    copy is deleted. They stay in the online list; activating them again downloads them again.
+  * **Your folders**: the files are deleted from disk for good – not to the Recycle Bin/Trash. FontCraft says
+    so and asks whether you're sure; it also warns when the folder is on the network and shared with others.
+  * **System fonts**: instead of deleting them you can **move** them into a folder of your library. The folder is
+    filled in for you (the one you used last time, or a folder you already have); a new folder is added to
+    FontCraft's Folders automatically. Fonts the operating system needs itself are marked and left out unless
+    you untick the box, and FontCraft explains what can go wrong on Windows, macOS or Linux. Your system asks
+    for administrator permission when it's needed; a font Windows is still using goes at the next restart.
+
+### New: network folders
+* "Add network folder…" (in the Add menu and under Folders): type or paste `\\server\share\fonts`, a mapped
+  drive, or `smb://server/fonts` on macOS and Linux – or browse to it.
+* Network folders are marked in the sidebar. When the network is away the folder shows "offline", its active
+  fonts are remembered and switched on again as soon as it's back. FontCraft looks at network folders every
+  30 seconds instead of every 2, to keep the network quiet.
+
+### Search
+* A little × in the search bar clears it in one click (Esc in the box does the same).
+
+### Font finder: letters that touch
+* Two or three letters that run into each other (ink bleed, tight spacing, blurry photos) are now cut apart
+  automatically where they meet in a thin joint. Wide single letters like m, w, M, W and H stay whole.
+* Right-click any letter box to cut it into 2–12 letters, join it with the letter on its right (for a letter
+  that broke in two), or leave it out. "Undo all my cuts and joins" brings back the original boxes.
+* What you left out and what you typed stays when you cut or join boxes.
+
 ## 1.1.0
 
 ### New: Font finder – which font is in this picture?

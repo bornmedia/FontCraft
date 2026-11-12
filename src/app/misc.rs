@@ -11,15 +11,22 @@ impl FontCraftApp {
         if ctx.memory(|m| m.focused().is_some()) {
             return;
         }
-        let (up, down, space, all, esc) = ctx.input(|i| {
+        if self.delete.is_some() || self.netdlg.is_some() {
+            return;
+        }
+        let (up, down, space, all, esc, del) = ctx.input(|i| {
             (
                 i.key_pressed(egui::Key::ArrowUp),
                 i.key_pressed(egui::Key::ArrowDown),
                 i.key_pressed(egui::Key::Space),
                 i.modifiers.command && i.key_pressed(egui::Key::A),
                 i.key_pressed(egui::Key::Escape),
+                i.key_pressed(egui::Key::Delete),
             )
         });
+        if del && !self.selected.is_empty() && !matches!(self.view, View::Online(_) | View::Finder) {
+            acts.push(Action::Delete(self.selected.iter().copied().collect()));
+        }
         if (up || down) && !self.visible.is_empty() {
             let pos = self.primary.and_then(|p| self.visible.iter().position(|x| *x == p));
             let next = match pos {

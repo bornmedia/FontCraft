@@ -36,6 +36,20 @@ Add any folders with fonts; sub-folders appear as a tree. FontCraft watches them
 within seconds and deleted ones disappear. Click the dot next to a font, folder, collection or tag to activate it.
 A filled dot means the font can be used in every app.
 
+### Network folders
+Add a shared folder from a server, a NAS or another computer (*Add › Add network folder…*): `\\server\fonts`, a
+mapped drive, or `smb://server/fonts` on macOS and Linux. Its fonts are switched on like any others. When the
+network is away, FontCraft remembers which of them were active and switches them on again when it's back.
+
+### Deleting fonts
+Right-click a font › *Delete…* (or select several and press Delete). FontCraft always asks first:
+
+* **Online fonts** are deactivated and their local copy is deleted; activating them again downloads them again.
+* **Fonts in your folders** are deleted for good (not to the Recycle Bin or Trash), so FontCraft asks if you're sure.
+* **System fonts** can be **moved** into one of your FontCraft folders instead of being deleted. Fonts the system
+  needs itself are marked and left out by default, and FontCraft explains the risks on Windows, macOS and Linux.
+  Your system asks for administrator permission where needed.
+
 ### Collections and tags
 Drag fonts onto a collection or tag in the sidebar. Collections can be exported to a folder, printed as a specimen
 and exported as CSS. FontCraft also adds tags by itself (serif, sans, script, mono, heavy, condensed, high-contrast…).
@@ -102,7 +116,7 @@ A compact grid, a waterfall of sizes, a type tester, sliders for variable fonts,
   or watch project folders. The fonts the document uses are switched on, and missing ones can come from Google Fonts.
 * **Sync:** keep collections, tags and favorites (and the fonts in your collections) in step across computers
   through Dropbox, Google Drive, OneDrive or iCloud Drive.
-* **Search:** type several words to match names, styles, designers, foundries and tags.
+* **Search:** type several words to match names, styles, designers, foundries and tags. The × clears the search.
 * **Autostart** when you sign in (Windows, macOS, Linux), and **hide to the system tray** when closing (Windows only).
 * Group styles into families your own way (right-click › *Change family name…*).
 

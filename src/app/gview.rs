@@ -252,7 +252,7 @@ impl FontCraftApp {
                     ui.close_menu();
                 }
             });
-            if ui.button("Remove from library").on_hover_text("Switches it off and deletes the downloaded files").clicked() {
+            if ui.button("Delete…").on_hover_text("Deactivate it, or also delete the downloaded copy (FontCraft asks first)").clicked() {
                 self.google_remove(gi);
                 ui.close_menu();
             }

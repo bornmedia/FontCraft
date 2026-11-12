@@ -195,8 +195,137 @@ fn overlap(a0: usize, a1: usize, b0: usize, b1: usize) -> f32 {
     (a1.min(b1) as f32 - a0.max(b0) as f32).max(0.0)
 }
 
+/// Changes the person made to the letter boxes. Points are fractions of the whole
+/// picture, so they stay put when another part of the picture is chosen.
+/// They are applied in the order they were made.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BoxEdits(pub Vec<BoxEdit>);
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BoxEdit {
+    /// cut the box under this point into this many letters
+    Split([f32; 2], usize),
+    /// make the boxes under these two points one letter
+    Join([f32; 2], [f32; 2]),
+}
+
+/// Ink of `c` in every column of its box.
+fn column_ink(c: &Comp, label: &[u32], w: usize) -> Vec<u32> {
+    (c.x0..c.x1)
+        .map(|x| (c.y0..c.y1).filter(|y| { let l = label[y * w + x]; l != 0 && c.labels.contains(&l) }).count() as u32)
+        .collect()
+}
+
+/// Typical stroke width of these blobs: the middle length of their horizontal ink runs.
+fn stroke_width(comps: &[Comp], label: &[u32], w: usize) -> f32 {
+    let mut runs = vec![];
+    for c in comps {
+        for y in c.y0..c.y1 {
+            let mut run = 0u32;
+            for x in c.x0..=c.x1 {
+                let on = x < c.x1 && { let l = label[y * w + x]; l != 0 && c.labels.contains(&l) };
+                if on {
+                    run += 1;
+                } else if run > 0 {
+                    runs.push(run);
+                    run = 0;
+                }
+            }
+        }
+    }
+    if runs.is_empty() {
+        return 1.0;
+    }
+    runs.sort();
+    runs[runs.len() / 2] as f32
+}
+
+/// Cut a blob of touching letters into `k` pieces where the ink is thinnest.
+/// Without `forced`, every cut must go through a joint no thicker than `max_joint`.
+fn cut_comp(c: &Comp, k: usize, label: &[u32], w: usize, forced: bool, max_joint: f32) -> Option<Vec<Comp>> {
+    if k < 2 {
+        return None;
+    }
+    let n = c.w();
+    let avg = n as f32 / k as f32;
+    let minw = ((0.35 * avg) as usize).max(2);
+    if n < k * minw {
+        return None;
+    }
+    let p = column_ink(c, label, w);
+    // best[j][x]: cheapest way to place j+1 cuts with the last one at column x
+    let inf = f32::INFINITY;
+    let cost = |x: usize| p[x] as f32 + 0.002 * (x as f32 - avg * (x as f32 / avg).round()).abs();
+    let mut best = vec![vec![inf; n]; k - 1];
+    let mut from = vec![vec![0usize; n]; k - 1];
+    for x in minw..n {
+        best[0][x] = cost(x);
+    }
+    for j in 1..k - 1 {
+        for x in minw * (j + 1)..n {
+            for prev in minw * j..=x - minw {
+                let v = best[j - 1][prev] + cost(x);
+                if v < best[j][x] {
+                    best[j][x] = v;
+                    from[j][x] = prev;
+                }
+            }
+        }
+    }
+    let last = (minw * (k - 1)..=n - minw).min_by(|a, b| best[k - 2][*a].partial_cmp(&best[k - 2][*b]).unwrap())?;
+    if !best[k - 2][last].is_finite() {
+        return None;
+    }
+    let mut cuts = vec![last];
+    for j in (1..k - 1).rev() {
+        let prev = from[j][*cuts.last().unwrap()];
+        cuts.push(prev);
+    }
+    cuts.reverse();
+    if !forced {
+        // A thin joint that only sits along the top is the arch of an m or n, not two
+        // letters touching: those are left for the person to cut by hand.
+        let arch = |x: usize| {
+            let lowest = (c.y0..c.y1).rev().find(|y| { let l = label[y * w + c.x0 + x]; l != 0 && c.labels.contains(&l) });
+            lowest.map(|y| ((y - c.y0) as f32) < 0.3 * c.h() as f32).unwrap_or(true)
+        };
+        if cuts.iter().any(|x| p[*x] as f32 > max_joint || arch(*x)) {
+            return None;
+        }
+    }
+    let mut edges = vec![0];
+    edges.extend(cuts);
+    edges.push(n);
+    let mut out = vec![];
+    for e in edges.windows(2) {
+        let (a, b) = (c.x0 + e[0], c.x0 + e[1]);
+        let mut piece = Comp { x0: a, y0: usize::MAX, x1: b, y1: 0, area: 0, labels: c.labels.clone() };
+        for y in c.y0..c.y1 {
+            for x in a..b {
+                let l = label[y * w + x];
+                if l != 0 && c.labels.contains(&l) {
+                    piece.y0 = piece.y0.min(y);
+                    piece.y1 = piece.y1.max(y + 1);
+                    piece.area += 1;
+                }
+            }
+        }
+        if piece.area == 0 {
+            return None;
+        }
+        out.push(piece);
+    }
+    Some(out)
+}
+
 /// Find the letters in `crop` (x0, y0, x1, y1 as fractions) of a grey picture.
+#[allow(dead_code)]
 pub fn analyze(img: &image::GrayImage, crop: [f32; 4]) -> Sample {
+    analyze_with(img, crop, &BoxEdits::default())
+}
+
+/// Like [`analyze`], with the person's own splits and joins of letter boxes.
+pub fn analyze_with(img: &image::GrayImage, crop: [f32; 4], edits: &BoxEdits) -> Sample {
     let (iw, ih) = img.dimensions();
     if iw < 2 || ih < 2 {
         return Sample::default();
@@ -444,6 +573,58 @@ pub fn analyze(img: &image::GrayImage, crop: [f32; 4]) -> Sample {
         comps.retain(|c| (c.h() as f32) >= 0.3 * line_h || (c.w() as f32) >= 0.3 * line_h);
         if comps.is_empty() {
             continue;
+        }
+        // Letters that touch (ink bleed, tight spacing, blur in photos) come out as one
+        // blob two or three letters wide: cut them where they meet in a thin joint.
+        let mut ws: Vec<usize> = comps.iter().filter(|c| (c.w() as f32) <= line_h).map(|c| c.w()).collect();
+        if ws.len() >= 3 {
+            ws.sort();
+            let tw = ws[ws.len() / 2].max(1) as f32;
+            // usual width for a letter's height, so capitals (H, N) aren't judged by small letters
+            let mut asp: Vec<f32> = comps.iter().filter(|c| (c.w() as f32) <= line_h).map(|c| c.w() as f32 / c.h().max(1) as f32).collect();
+            asp.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let ta = asp[asp.len() / 2].max(0.05);
+            let sw = stroke_width(&comps, &label, w);
+            let mut out = Vec::with_capacity(comps.len());
+            for c in comps {
+                let r = (c.w() as f32 / tw).min(c.w() as f32 / (ta * c.h().max(1) as f32));
+                if (1.7..=3.6).contains(&r) {
+                    let max_joint = (0.5 * sw).min(0.15 * c.h() as f32).max(1.0);
+                    let k = (r.round() as usize).clamp(2, 3);
+                    if let Some(parts) = cut_comp(&c, k, &label, w, false, max_joint).or_else(|| if k > 2 { cut_comp(&c, 2, &label, w, false, max_joint) } else { None }) {
+                        out.extend(parts);
+                        continue;
+                    }
+                }
+                out.push(c);
+            }
+            comps = out;
+        }
+        // the person's own cuts and joins
+        let to_work = |p: [f32; 2]| -> (f32, f32) { ((p[0] * iw as f32 - cx0 as f32) * k, (p[1] * ih as f32 - cy0 as f32) * k) };
+        let under = |comps: &[Comp], p: [f32; 2]| -> Option<usize> {
+            let (x, y) = to_work(p);
+            comps.iter().position(|c| x >= c.x0 as f32 - 1.0 && x <= c.x1 as f32 + 1.0 && y >= c.y0 as f32 - 1.0 && y <= c.y1 as f32 + 1.0)
+        };
+        for e in &edits.0 {
+            match e {
+                BoxEdit::Split(pt, n) => {
+                    if let Some(i) = under(&comps, *pt) {
+                        if let Some(parts) = cut_comp(&comps[i], *n, &label, w, true, 0.0) {
+                            comps.splice(i..=i, parts);
+                        }
+                    }
+                }
+                BoxEdit::Join(a, b) => {
+                    if let (Some(i), Some(j)) = (under(&comps, *a), under(&comps, *b)) {
+                        if i != j {
+                            let other = comps.remove(j);
+                            let i = if j < i { i - 1 } else { i };
+                            comps[i].merge(other);
+                        }
+                    }
+                }
+            }
         }
         comps.sort_by_key(|c| c.x0);
         let mut bottoms: Vec<usize> = comps.iter().map(|c| c.y1).collect();
@@ -1199,6 +1380,64 @@ mod tests {
         // more letters than shapes in a different word count: the whole line is compared
         let units = make_plan(&s2, &[], &[], Some("Hamburger Quiz Show"));
         assert_eq!(units, vec![Unit::Line(0, "Hamburger Quiz Show".into())]);
+    }
+
+    /// Join neighbouring letters in `img` with a thin bar at half their height.
+    fn glue(img: &mut image::GrayImage, a: &Glyph, b: &Glyph, thick: u32) {
+        let (w, h) = (img.width() as f32, img.height() as f32);
+        // across most of both letters, so both are surely touched
+        let x0 = ((0.8 * a.rect[0] + 0.2 * a.rect[2]) * w) as u32;
+        let x1 = ((0.2 * b.rect[0] + 0.8 * b.rect[2]) * w) as u32;
+        let y = ((a.rect[1] + a.rect[3]).max(b.rect[1] + b.rect[3]) / 2.0 * h) as u32;
+        for x in x0..=x1 {
+            for t in 0..thick {
+                img.put_pixel(x, y + t, image::Luma([0]));
+            }
+        }
+    }
+
+    #[test]
+    fn cuts_touching_letters_apart() {
+        let Some(times) = system_font(&["times.ttf", "Times New Roman.ttf", "DejaVuSerif.ttf", "LiberationSerif-Regular.ttf"]) else { return };
+        let Some(arial) = system_font(&["arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "LiberationSans-Regular.ttf"]) else { return };
+        // (font, text, neighbours glued together that must be cut apart again)
+        let cases: [(&PathBuf, &str, &[usize]); 4] =
+            [(&times, "Hamburg Quiz", &[0, 4]), (&arial, "Hamburg Quiz", &[0, 4, 7]), (&times, "summer swimming", &[0, 4]), (&arial, "minimum MW", &[])];
+        for (font, text, pairs) in cases {
+            let clean = picture(font, text, 64.0);
+            let s0 = analyze(&clean, [0.0, 0.0, 1.0, 1.0]);
+            let n = text.chars().filter(|c| !c.is_whitespace()).count();
+            assert_eq!(s0.glyphs.len(), n, "{text}: wide letters like m and W must stay whole");
+            let mut img = clean.clone();
+            for g in pairs {
+                glue(&mut img, &s0.glyphs[*g], &s0.glyphs[*g + 1], 2);
+            }
+            let glued = analyze_with(&img, [0.0, 0.0, 1.0, 1.0], &BoxEdits::default());
+            assert_eq!(glued.glyphs.len(), n, "{text}: touching letters are cut apart");
+            // a whole word glued into one blob: too long to cut by itself, but the person can
+            let mut img = clean.clone();
+            let w0 = s0.words[0].glyphs.clone();
+            for g in w0.start..w0.end - 1 {
+                glue(&mut img, &s0.glyphs[g], &s0.glyphs[g + 1], 2);
+            }
+            let s1 = analyze(&img, [0.0, 0.0, 1.0, 1.0]);
+            let first = &s1.glyphs[0];
+            assert!(first.wide, "{text}: a glued word is one wide box");
+            let r = first.rect;
+            let mid = |r: [f32; 4]| [(r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0];
+            let edits = BoxEdits(vec![BoxEdit::Split(mid(r), w0.len())]);
+            let s2 = analyze_with(&img, [0.0, 0.0, 1.0, 1.0], &edits);
+            assert_eq!(s2.glyphs.len(), n, "{text}: split by hand");
+            // and joined back
+            let mut edits = edits.clone();
+            edits.0.push(BoxEdit::Join(mid(s2.glyphs[0].rect), mid(s2.glyphs[1].rect)));
+            let s3 = analyze_with(&img, [0.0, 0.0, 1.0, 1.0], &edits);
+            assert_eq!(s3.glyphs.len(), n - 1, "{text}: joined by hand");
+            // a joined box can be cut again
+            edits.0.push(BoxEdit::Split(mid(s3.glyphs[0].rect), 2));
+            let s4 = analyze_with(&img, [0.0, 0.0, 1.0, 1.0], &edits);
+            assert_eq!(s4.glyphs.len(), n, "{text}: cut again after joining");
+        }
     }
 
     /// The whole search over every font on this computer, without hints.

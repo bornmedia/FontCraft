@@ -63,6 +63,12 @@ pub fn deactivate(paths: &[PathBuf]) -> Vec<(PathBuf, String)> {
     errors
 }
 
+/// Tell all programs that the list of fonts changed.
+#[allow(dead_code)]
+pub fn notify_font_change() {
+    notify();
+}
+
 #[cfg(windows)]
 fn wide(p: &Path) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;

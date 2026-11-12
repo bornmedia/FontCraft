@@ -124,6 +124,12 @@ impl FontCraftApp {
             acts.push(Action::ShowInFolder(path));
             ui.close_menu();
         }
+        ui.separator();
+        let del = RichText::new("Delete…").color(Color32::from_rgb(0xff, 0x5c, 0x5c));
+        if ui.button(del).on_hover_text("Delete the font files (FontCraft asks first)").clicked() {
+            acts.push(Action::Delete(targets.clone()));
+            ui.close_menu();
+        }
     }
 
     pub(super) fn toolbar(&mut self, ui: &mut Ui) {
@@ -232,6 +238,9 @@ impl FontCraftApp {
                     ui.close_menu();
                 }
             });
+            if ui.small_button(RichText::new("Delete…").color(Color32::from_rgb(0xff, 0x5c, 0x5c))).clicked() {
+                acts.push(Action::Delete(sel.clone()));
+            }
             if ui.small_button("Clear").clicked() {
                 self.selected.clear();
                 if let Some(pr) = self.primary {

@@ -412,7 +412,14 @@ impl FontCraftApp {
             let state = self.faces_state(&n.faces);
             let v = View::Folder(n.path.clone());
             let paths: Vec<String> = n.faces.iter().map(|f| self.faces[*f].path_key.clone()).collect();
-            let (path, depth, root, name, count, kids) = (n.path.clone(), n.depth, n.root, n.name.clone(), n.fams.len(), n.has_children);
+            let (path, depth, root, mut name, count, kids) = (n.path.clone(), n.depth, n.root, n.name.clone(), n.fams.len(), n.has_children);
+            let net = depth == 0 && self.is_net_folder(&path);
+            let away = depth == 0 && self.offline.contains(&path);
+            if away {
+                name.push_str("  · offline");
+            } else if net {
+                name.push_str("  · network");
+            }
             let (r, d, a) = Self::side_item(
                 ui,
                 p,
@@ -438,7 +445,14 @@ impl FontCraftApp {
             if r.clicked() {
                 acts.push(Action::SetView(v.clone()));
             }
-            let r = r.on_hover_text(path.display().to_string());
+            let tip = if away {
+                format!("{}\nCan't be reached right now. Its active fonts come back when it's online again.", path.display())
+            } else if net {
+                format!("Network folder: {}", path.display())
+            } else {
+                path.display().to_string()
+            };
+            let r = r.on_hover_text(tip);
             r.context_menu(|ui| {
                 if ui.button("Switch all fonts in folder on").clicked() {
                     acts.push(Action::SetPaths(paths.clone(), true));
@@ -465,6 +479,20 @@ impl FontCraftApp {
                     }
                 }
             });
+        }
+        // network folders: a share on a server, NAS or another computer
+        ui.add_space(2.0);
+        let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
+        let col = if resp.hovered() { p.accent } else { p.weak };
+        ui.painter().text(
+            pos2(rect.left() + 26.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            "+ Add a network folder…",
+            FontId::proportional(12.0),
+            col,
+        );
+        if resp.on_hover_text("A shared folder on a server, a NAS or another computer").clicked() {
+            acts.push(Action::NetworkFolderDialog);
         }
     }
 }

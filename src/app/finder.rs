@@ -4,7 +4,7 @@
 use super::list::paint_on_baseline;
 use super::ui::paint_dot;
 use super::*;
-use crate::fontmatch::{self, Cand, JobMsg, Sample};
+use crate::fontmatch::{self, BoxEdit, BoxEdits, Cand, JobMsg, Sample};
 use egui::{pos2, vec2, Align2, FontFamily, FontId, Id, Rect, RichText, Sense, StrokeKind, Ui};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -51,6 +51,10 @@ pub struct Finder {
     pub waiting: Option<Option<Vec<char>>>,
     /// smaller text was left out at first
     small_left_out: bool,
+    /// the person's own cuts and joins of letter boxes (for this picture)
+    edits: BoxEdits,
+    /// the letter box the right-click menu is open for
+    menu_glyph: Option<usize>,
 }
 
 impl Default for Finder {
@@ -72,6 +76,8 @@ impl Default for Finder {
             error: None,
             waiting: None,
             small_left_out: false,
+            edits: BoxEdits::default(),
+            menu_glyph: None,
         }
     }
 }
@@ -157,12 +163,45 @@ impl FontCraftApp {
         self.finder.pic = Some(Pic { gray, tex, size, name });
         self.finder.error = None;
         self.finder.crop = [0.0, 0.0, 1.0, 1.0];
+        self.finder.edits = BoxEdits::default();
         self.finder_analyze();
+    }
+
+    /// Find the letter boxes again after the person cut or joined one. What they left
+    /// out and what they typed stays.
+    fn finder_edit_boxes(&mut self, e: Option<BoxEdit>) {
+        match e {
+            Some(e) => self.finder.edits.0.push(e),
+            None => self.finder.edits = BoxEdits::default(),
+        }
+        let (Some(pic), Some(old)) = (&self.finder.pic, self.finder.sample.clone()) else { return };
+        let s = fontmatch::analyze_with(&pic.gray, self.finder.crop, &self.finder.edits);
+        let skip: Vec<bool> = s
+            .glyphs
+            .iter()
+            .map(|g| {
+                let (cx, cy) = ((g.rect[0] + g.rect[2]) / 2.0, (g.rect[1] + g.rect[3]) / 2.0);
+                match old.glyphs.iter().position(|o| cx >= o.rect[0] && cx <= o.rect[2] && cy >= o.rect[1] && cy <= o.rect[3]) {
+                    // a joined-up box that was left out by itself: its pieces are wanted now
+                    Some(i) if old.glyphs[i].wide && !g.wide => false,
+                    Some(i) => self.finder.skip.get(i).copied().unwrap_or(g.wide),
+                    None => g.wide,
+                }
+            })
+            .collect();
+        self.finder.skip = skip;
+        self.finder.letters = vec!['?'; s.glyphs.len()];
+        if self.finder.typed.is_none() {
+            self.finder.text = letters_text(&s, &self.finder.letters, &self.finder.skip);
+        }
+        self.finder.results.clear();
+        self.finder.sample = Some(Arc::new(s));
+        self.finder_start(None);
     }
 
     fn finder_analyze(&mut self) {
         let Some(pic) = &self.finder.pic else { return };
-        let s = fontmatch::analyze(&pic.gray, self.finder.crop);
+        let s = fontmatch::analyze_with(&pic.gray, self.finder.crop, &self.finder.edits);
         // Text of very different sizes is usually different fonts (a headline and its
         // small print): start with the biggest text, the rest can be clicked back in.
         let mut line_h: HashMap<usize, f32> = HashMap::new();
@@ -446,7 +485,7 @@ impl FontCraftApp {
         ui.label(RichText::new("How it works").strong().color(p.text));
         for line in [
             "1.  FontCraft finds the letters in the picture and reads them.",
-            "2.  Drag a box around the text you care about; click a letter to leave it out.",
+            "2.  Drag a box around the text you care about; click a letter to leave it out, right-click it to cut touching letters apart.",
             "3.  Fix the letters if they were misread – the more letters you confirm, the better the match.",
             "4.  Every font in your library, on this computer and on Google Fonts is compared, closest first.",
         ] {
@@ -478,6 +517,7 @@ impl FontCraftApp {
             }
             // letters
             let mut clicked_glyph = None;
+            let mut hovered_glyph = None;
             let hover = resp.hover_pos();
             if let Some(s) = &self.finder.sample {
                 for (gi, g) in s.glyphs.iter().enumerate() {
@@ -498,8 +538,14 @@ impl FontCraftApp {
                         painter.rect_filled(lr, CornerRadius::same(3), p.accent);
                         painter.text(lr.center(), Align2::CENTER_CENTER, ch.to_string(), FontId::proportional(10.5), Color32::BLACK);
                     }
+                    if hov {
+                        hovered_glyph = Some(gi);
+                    }
                     if hov && resp.clicked() {
                         clicked_glyph = Some(gi);
+                    }
+                    if self.finder.menu_glyph == Some(gi) && ui.ctx().is_context_menu_open() {
+                        painter.rect_stroke(gr.expand(2.0), CornerRadius::same(3), Stroke::new(2.0_f32, p.text), StrokeKind::Outside);
                     }
                 }
             }
@@ -522,6 +568,65 @@ impl FontCraftApp {
             } else if resp.drag_stopped() {
                 self.finder.drag = None;
             }
+            // right-click a letter box: cut it into letters, join it with the next one
+            if resp.secondary_clicked() {
+                self.finder.menu_glyph = hovered_glyph;
+            }
+            let mut menu_act: Option<Option<BoxEdit>> = None;
+            let mut toggle = None;
+            let info = self.finder.sample.as_ref().zip(self.finder.menu_glyph).and_then(|(s, gi)| {
+                let g = s.glyphs.get(gi)?;
+                let mid = |r: [f32; 4]| [(r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0];
+                let next = s.glyphs.get(gi + 1).filter(|n| n.line == g.line).map(|n| mid(n.rect));
+                Some((gi, mid(g.rect), next, self.finder.skip.get(gi).copied().unwrap_or(false)))
+            });
+            let has_edits = !self.finder.edits.0.is_empty();
+            resp.context_menu(|ui| {
+                ui.set_min_width(210.0);
+                match info {
+                    Some((gi, at, next, off)) => {
+                        ui.label(RichText::new("Several letters in this box?").size(11.5).color(p.weak));
+                        for n in 2..=4 {
+                            if ui.button(format!("Cut into {n} letters")).clicked() {
+                                menu_act = Some(Some(BoxEdit::Split(at, n)));
+                                ui.close_menu();
+                            }
+                        }
+                        ui.menu_button("Cut into more letters", |ui| {
+                            for n in 5..=12 {
+                                if ui.button(format!("{n} letters")).clicked() {
+                                    menu_act = Some(Some(BoxEdit::Split(at, n)));
+                                    ui.close_menu();
+                                }
+                            }
+                        });
+                        ui.separator();
+                        if let Some(nx) = next {
+                            if ui.button("Join with the letter on the right").on_hover_text("For a letter that was cut in two").clicked() {
+                                menu_act = Some(Some(BoxEdit::Join(at, nx)));
+                                ui.close_menu();
+                            }
+                        }
+                        if ui.button(if off { "Take this letter back in" } else { "Leave this letter out" }).clicked() {
+                            toggle = Some(gi);
+                            ui.close_menu();
+                        }
+                    }
+                    None => {
+                        ui.label(RichText::new("Right-click a letter box to cut it into letters or join it with the next one.").size(12.0));
+                    }
+                }
+                if has_edits {
+                    ui.separator();
+                    if ui.button("Undo all my cuts and joins").clicked() {
+                        menu_act = Some(None);
+                        ui.close_menu();
+                    }
+                }
+            });
+            if let Some(gi) = toggle {
+                clicked_glyph = Some(gi);
+            }
             if let Some(gi) = clicked_glyph {
                 if let Some(v) = self.finder.skip.get_mut(gi) {
                     *v = !*v;
@@ -533,7 +638,10 @@ impl FontCraftApp {
                 }
                 self.finder_search_again();
             }
-            let resp = resp.on_hover_text("Drag a box around the text to compare. Click a letter to leave it out (or take it back in).");
+            if let Some(e) = menu_act {
+                self.finder_edit_boxes(e);
+            }
+            let resp = resp.on_hover_text("Drag a box around the text to compare. Click a letter to leave it out (or take it back in). Right-click a letter to cut it apart or join it.");
             let _ = resp;
             let name = self.finder.pic.as_ref().map(|p| p.name.clone()).unwrap_or_default();
             ui.add_space(4.0);
@@ -578,6 +686,12 @@ impl FontCraftApp {
                     RichText::new("The letters are joined up (script). Type the text exactly as it appears and press Enter – then whole words are compared and the match gets far better.")
                         .size(12.0)
                         .color(p.accent),
+                );
+            } else if joined > 0 {
+                ui.label(
+                    RichText::new("Some boxes hold several letters and are left out. Right-click one to cut it into single letters.")
+                        .size(11.5)
+                        .color(p.weak),
                 );
             }
             if self.finder.small_left_out {

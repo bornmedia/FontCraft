@@ -6,6 +6,7 @@ mod gview;
 mod list;
 mod misc;
 mod playground;
+mod removal;
 mod settings;
 mod sidebar;
 mod ui;
@@ -40,6 +41,8 @@ pub struct Family {
     pub name: String,
     pub lower: String,
     pub faces: Vec<usize>,
+    /// every face of the family, including copies of the same style in other files
+    pub files: Vec<usize>,
     pub primary: usize,
     pub system: bool,
     pub added: u64,
@@ -126,6 +129,9 @@ enum Action {
     ShowInFolder(PathBuf),
     Copy(String),
     RenameFamily(Vec<usize>),
+    /// open the "Delete fonts" window for these families
+    Delete(Vec<usize>),
+    NetworkFolderDialog,
 }
 
 struct Shot {
@@ -363,6 +369,16 @@ pub struct FontCraftApp {
     tray: Option<crate::tray::Tray>,
     #[cfg_attr(not(windows), allow(dead_code))]
     quitting: bool,
+    // deleting fonts
+    delete: Option<removal::DeleteDialog>,
+    del_rx: Option<Receiver<removal::DelResult>>,
+    del_report: Option<String>,
+    // network folders
+    netdlg: Option<removal::NetDialog>,
+    /// library folders that couldn't be reached in the last scan
+    offline: HashSet<PathBuf>,
+    /// library folders on another computer
+    net_folders: Vec<PathBuf>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -407,6 +423,12 @@ impl FontCraftApp {
             #[cfg(windows)]
             tray: None,
             quitting: false,
+            delete: None,
+            del_rx: None,
+            del_report: None,
+            netdlg: None,
+            offline: HashSet::new(),
+            net_folders: vec![],
             google,
             gcat: vec![],
             gstates: [GState::Loading, GState::Loading, GState::Loading],
@@ -601,11 +623,36 @@ impl FontCraftApp {
         while let Ok(m) = rx.try_recv() {
             match m {
                 ScanMsg::Progress { done, total } => self.scan_progress = (done, total),
-                ScanMsg::Done { faces, cache } => done = Some((faces, cache)),
+                ScanMsg::Done { faces, cache, offline, network } => done = Some((faces, cache, offline, network)),
             }
         }
-        if let Some((faces, cache)) = done {
+        if let Some((faces, cache, offline, network)) = done {
             self.scan_rx = None;
+            // Network folders that are away keep their active fonts; when they're back, the fonts
+            // are switched on again.
+            let offline: HashSet<PathBuf> = offline.into_iter().collect();
+            let back: Vec<PathBuf> = self.offline.difference(&offline).cloned().collect();
+            let went: Vec<PathBuf> = offline.difference(&self.offline).cloned().collect();
+            self.offline = offline;
+            self.net_folders = network;
+            if self.scans_done > 0 && self.shot.is_none() {
+                if !back.is_empty() {
+                    let paths: Vec<PathBuf> = self
+                        .cfg
+                        .active
+                        .iter()
+                        .filter(|p| back.iter().any(|b| std::path::Path::new(p.as_str()).starts_with(b)))
+                        .map(PathBuf::from)
+                        .filter(|p| p.exists())
+                        .collect();
+                    if !paths.is_empty() {
+                        self.spawn_activation(paths, true, true);
+                    }
+                }
+                if let Some(w) = went.first() {
+                    self.set_status(format!("{} can't be reached right now – its active fonts come back when it's online again", w.display()));
+                }
+            }
             if self.shot.is_none() {
                 config::save_cache(&cache);
             }
@@ -614,7 +661,10 @@ impl FontCraftApp {
             if self.scans_done > 0 {
                 let after: HashSet<&String> = self.faces.iter().filter(|f| !f.system).map(|f| &f.path_key).collect();
                 let added = after.iter().filter(|p| !before.contains(**p)).count();
-                let removed = before.iter().filter(|p| !after.contains(p)).count();
+                let removed = before
+                    .iter()
+                    .filter(|p| !after.contains(p) && !self.offline.iter().any(|o| std::path::Path::new(p.as_str()).starts_with(o)))
+                    .count();
                 let mut parts = vec![];
                 if added > 0 {
                     parts.push(format!("{added} new font file{} found", if added == 1 { "" } else { "s" }));
@@ -627,7 +677,9 @@ impl FontCraftApp {
                 }
             }
             // Fonts that were deleted on disk can't stay active.
-            let gone: Vec<String> = self.cfg.active.iter().filter(|p| !std::path::Path::new(p.as_str()).exists()).cloned().collect();
+            let away = |p: &str| self.offline.iter().any(|o| std::path::Path::new(p).starts_with(o));
+            let gone: Vec<String> =
+                self.cfg.active.iter().filter(|p| !away(p) && !std::path::Path::new(p.as_str()).exists()).cloned().collect();
             if !gone.is_empty() {
                 for g in &gone {
                     self.cfg.active.remove(g);
@@ -642,12 +694,36 @@ impl FontCraftApp {
                 }
             }
             self.scans_done += 1;
+            // for pictures of the windows: FONTCRAFT_SHOW=delete|network
+            if self.scans_done == 1 {
+                match std::env::var("FONTCRAFT_SHOW").as_deref() {
+                    Ok("delete") => {
+                        let mut pick: Vec<usize> = vec![];
+                        let os = self.families.iter().position(|f| f.system && crate::remove::is_os_font(&self.faces[f.primary].meta.path, &f.name));
+                        let other = self.families.iter().position(|f| f.system && !crate::remove::is_os_font(&self.faces[f.primary].meta.path, &f.name));
+                        let mine = self.families.iter().position(|f| !f.system);
+                        pick.extend([os, other, mine].into_iter().flatten());
+                        self.open_delete(pick);
+                    }
+                    Ok("search") => self.search = "Arial".into(),
+                    Ok("network") => {
+                        self.netdlg = Some(removal::NetDialog { address: r"\\nas\Design\Fonts".into(), error: None, busy: None })
+                    }
+                    _ => {}
+                }
+            }
             if self.rescan_pending {
                 self.rescan();
             }
             if self.scans_done == 1 && self.shot.is_none() {
                 // Bring back the fonts that were active last time.
-                let paths: Vec<PathBuf> = self.cfg.active.iter().map(PathBuf::from).filter(|p| p.exists()).collect();
+                let paths: Vec<PathBuf> = self
+                    .cfg
+                    .active
+                    .iter()
+                    .map(PathBuf::from)
+                    .filter(|p| !self.offline.iter().any(|o| p.starts_with(o)) && p.exists())
+                    .collect();
                 if !paths.is_empty() {
                     self.spawn_activation(paths, true, true);
                 }
@@ -692,6 +768,7 @@ impl FontCraftApp {
                     lower: fam_name.to_lowercase(),
                     name: fam_name.clone(),
                     faces: vec![],
+                    files: vec![],
                     primary: 0,
                     system,
                     added: 0,
@@ -713,6 +790,7 @@ impl FontCraftApp {
                 let m = &faces[*i].meta;
                 (m.italic, m.width, m.weight, m.style.clone())
             });
+            fam.files = fam.faces.clone();
             fam.faces.dedup_by(|a, b| {
                 let (x, y) = (&faces[*a].meta, &faces[*b].meta);
                 x.style == y.style && x.file_size == y.file_size && x.version == y.version
@@ -1033,7 +1111,6 @@ impl FontCraftApp {
                     self.gstates[p.idx()] = GState::Ready;
                 }
                 GMsg::Catalog(p, Err(e)) => self.gstates[p.idx()] = GState::Failed(e),
-                GMsg::Removed => self.rescan(),
                 GMsg::OpenInBrowser { name, url } => {
                     self.ctx.open_url(egui::OpenUrl::new_tab(url));
                     self.set_status(format!(
@@ -1082,22 +1159,9 @@ impl FontCraftApp {
         self.google.download(g, activate);
     }
 
+    /// "Delete…" on a family of an online source: asks first (only deactivate, or delete the download).
     fn google_remove(&mut self, gi: usize) {
-        let Some(g) = self.gcat.get(gi).cloned() else { return };
-        let paths: Vec<String> = self.gfam_faces(gi).iter().map(|f| self.faces[*f].path_key.clone()).collect();
-        self.set_paths(paths, false);
-        let dir = g.dir();
-        let name = g.name;
-        // give the system a moment to let go of the files before deleting them
-        let ctx = self.ctx.clone();
-        let tx = self.google.tx.clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(800));
-            let _ = std::fs::remove_dir_all(dir);
-            let _ = tx.send(GMsg::Removed);
-            ctx.request_repaint();
-        });
-        self.set_status(format!("{name} removed from your library"));
+        self.open_delete_online(gi);
     }
 
     fn view_title(&self, view: &View) -> String {
@@ -1403,6 +1467,12 @@ impl FontCraftApp {
                 Action::Copy(s) => {
                     self.ctx.copy_text(s.clone());
                     self.set_status(format!("Copied “{s}”"));
+                }
+                Action::Delete(fams) => self.open_delete(fams),
+                Action::NetworkFolderDialog => {
+                    if self.netdlg.is_none() {
+                        self.netdlg = Some(removal::NetDialog { address: String::new(), error: None, busy: None });
+                    }
                 }
             }
         }
@@ -1732,6 +1802,10 @@ impl eframe::App for FontCraftApp {
         if self.family_rename.is_some() {
             self.family_rename_window(ctx);
         }
+        self.poll_delete();
+        self.delete_window(ctx);
+        self.delete_report_window(ctx);
+        self.network_window(ctx);
         self.overlays(ctx);
         let changed_view = acts.iter().any(|a| matches!(a, Action::SetView(_)));
         self.apply(acts);
