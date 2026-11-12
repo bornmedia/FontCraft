@@ -45,6 +45,7 @@ impl FontCraftApp {
             for (t, l) in [
                 (Theme::Classic, "Classic"),
                 (Theme::Dark, "Dark"),
+                (Theme::Sand, "Sand"),
                 (Theme::Light, "Light"),
                 (Theme::Midnight, "Midnight"),
                 (Theme::Sepia, "Sepia"),
@@ -272,10 +273,21 @@ favourites there – plus copies of the fonts in your collections – and every 
             ui.label(RichText::new(format!("•  {t}")).size(12.0));
         }
         ui.add_space(8.0);
-        ui.label(
-            RichText::new(format!("FontCraft {} — every feature included, free, no account and no ads.", crate::updates::VERSION))
-                .color(p.accent),
-        );
+        let logo = self
+            .logo
+            .get_or_insert_with(|| {
+                let i = crate::icon_sized(96);
+                let img = egui::ColorImage::from_rgba_unmultiplied([i.width as usize, i.height as usize], &i.rgba);
+                ui.ctx().load_texture("fontcraft-logo", img, egui::TextureOptions::LINEAR)
+            })
+            .clone();
+        ui.horizontal(|ui| {
+            ui.add(egui::Image::new(&logo).fit_to_exact_size(vec2(48.0, 48.0)));
+            ui.label(
+                RichText::new(format!("FontCraft {} — every feature included, free, no account and no ads.", crate::updates::VERSION))
+                    .color(p.accent),
+            );
+        });
         if let Some(url) = crate::updates::releases_url() {
             ui.horizontal(|ui| {
                 if ui.checkbox(&mut self.cfg.check_updates, "Tell me when a new version is out").changed() {

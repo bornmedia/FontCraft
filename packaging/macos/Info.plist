@@ -10,6 +10,8 @@
     <string>app.fontcraft</string>
     <key>CFBundleExecutable</key>
     <string>FontCraft</string>
+    <key>CFBundleIconFile</key>
+    <string>FontCraft</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>

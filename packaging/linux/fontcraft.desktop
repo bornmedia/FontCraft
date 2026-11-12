@@ -4,6 +4,7 @@ Name=FontCraft
 GenericName=Font Manager
 Comment=Organise, preview and activate fonts without installing them
 Exec=fontcraft
+Icon=fontcraft
 Terminal=false
 Categories=Graphics;Utility;
 Keywords=font;fonts;typography;typeface;

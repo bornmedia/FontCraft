@@ -146,10 +146,10 @@ impl FontCraftApp {
                 } else {
                     format!("{} families", pl.0.len())
                 };
-                let g = painter.layout_no_wrap(txt, FontId::new(13.0, FontFamily::Proportional), Color32::WHITE);
+                let g = painter.layout_no_wrap(txt, FontId::new(13.0, FontFamily::Proportional), p.on_accent);
                 let r = Rect::from_min_size(pos + vec2(14.0, 8.0), g.size() + vec2(20.0, 10.0));
                 painter.rect_filled(r, CornerRadius::same(12), p.accent);
-                painter.galley(r.min + vec2(10.0, 5.0), g, Color32::WHITE);
+                painter.galley(r.min + vec2(10.0, 5.0), g, p.on_accent);
                 let _ = pos2(0.0, 0.0);
             }
         }

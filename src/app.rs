@@ -159,6 +159,8 @@ pub struct Pal {
     input: Color32,
     skeleton: Color32,
     heart: Color32,
+    /// text on a button filled with the accent colour
+    on_accent: Color32,
 }
 
 fn hex(v: u32) -> Color32 {
@@ -183,8 +185,17 @@ fn pal(t: Theme) -> Pal {
         input: hex(a[13]),
         skeleton: hex(a[14]),
         heart: hex(0xff2d55),
+        on_accent: Color32::WHITE,
     };
     match t {
+        // the sand of the app icon on warm, dark greys
+        Theme::Sand => Pal {
+            on_accent: hex(0x1d1912),
+            ..c([
+                0x141310, 0x1a1916, 0x1e1c19, 0x211f1b, 0x26231f, 0xeee8dd, 0x9b9283, 0x2e2b25, 0x27241f, 0x3a342a,
+                0xd6b278, 0x3b3224, 0x4d473e, 0x2a2722, 0x2a2722,
+            ])
+        },
         Theme::Dark => c([
             0x141414, 0x1a1a1a, 0x1e1e1e, 0x212121, 0x252525, 0xececec, 0x8f8f8f, 0x2c2c2c, 0x252525, 0x333333,
             0x2fd04b, 0x1f3a25, 0x4a4a4a, 0x2a2a2a, 0x292929,
@@ -379,6 +390,8 @@ pub struct FontCraftApp {
     offline: HashSet<PathBuf>,
     /// library folders on another computer
     net_folders: Vec<PathBuf>,
+    /// the app icon, for the About part of the settings
+    logo: Option<egui::TextureHandle>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -429,6 +442,7 @@ impl FontCraftApp {
             netdlg: None,
             offline: HashSet::new(),
             net_folders: vec![],
+            logo: None,
             google,
             gcat: vec![],
             gstates: [GState::Loading, GState::Loading, GState::Loading],
@@ -494,6 +508,15 @@ impl FontCraftApp {
             Some(p) if p.as_os_str().is_empty() => app.view = View::Finder,
             Some(p) => app.finder_load_path(p),
             None => {}
+        }
+        // for pictures of a check: FONTCRAFT_SHOW=sand,settings (nothing is saved in that mode)
+        if let (Some(_), Ok(s)) = (&app.shot, std::env::var("FONTCRAFT_SHOW")) {
+            if s.contains("sand") {
+                app.cfg.theme = Theme::Sand;
+            }
+            if s.contains("settings") {
+                app.show_settings = true;
+            }
         }
         if let Ok(s) = std::env::var("FONTCRAFT_SOURCE") {
             if let Some(p) = Provider::ALL.iter().find(|p| p.tag() == s.to_lowercase().replace(' ', "")) {
@@ -1610,7 +1633,7 @@ impl FontCraftApp {
         }
         self.themed = Some(self.cfg.theme);
         let p = self.p();
-        let dark = matches!(self.cfg.theme, Theme::Dark | Theme::Midnight);
+        let dark = matches!(self.cfg.theme, Theme::Dark | Theme::Midnight | Theme::Sand);
         let mut v = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
         v.panel_fill = p.content;
         v.window_fill = p.detail;

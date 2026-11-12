@@ -427,7 +427,8 @@ impl FontCraftApp {
                 }
                 if icon_button(ui, &p, sz, Icon::Theme, false, "Colour theme (click to switch)").clicked() {
                     self.cfg.theme = match self.cfg.theme {
-                        Theme::Dark => Theme::Light,
+                        Theme::Dark => Theme::Sand,
+                        Theme::Sand => Theme::Light,
                         Theme::Light => Theme::Midnight,
                         Theme::Midnight => Theme::Sepia,
                         Theme::Sepia => Theme::Classic,

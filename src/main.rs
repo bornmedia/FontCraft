@@ -21,7 +21,25 @@ mod tray;
 
 use std::path::PathBuf;
 
+/// The app icon (the platypus), as a 1024×1024 picture.
+const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
+
+/// The app icon at `size`×`size` pixels, for the window, the taskbar and the tray.
+pub(crate) fn icon_sized(size: u32) -> egui::IconData {
+    match image::load_from_memory_with_format(ICON_PNG, image::ImageFormat::Png) {
+        Ok(img) => {
+            let img = img.resize_exact(size, size, image::imageops::FilterType::Lanczos3).to_rgba8();
+            egui::IconData { width: img.width(), height: img.height(), rgba: img.into_raw() }
+        }
+        Err(_) => fallback_icon(),
+    }
+}
+
 pub(crate) fn icon() -> egui::IconData {
+    icon_sized(256)
+}
+
+fn fallback_icon() -> egui::IconData {
     let n = 64usize;
     let mut rgba = vec![0u8; n * n * 4];
     for y in 0..n {

@@ -1,3 +1,5 @@
+<img src="assets/icon.png" alt="FontCraft icon" width="128" align="right">
+
 # FontCraft
 
 A free font manager for **Windows, macOS and Linux**. Keep the fonts you own in your own folders,
@@ -106,8 +108,8 @@ the CSS or save it together with the font files.
 ![Playground](docs/screenshots/playground.png)
 
 ### Grid view, waterfall and themes
-A compact grid, a waterfall of sizes, a type tester, sliders for variable fonts, and five colour themes
-(Classic, Dark, Light, Midnight, Sepia).
+A compact grid, a waterfall of sizes, a type tester, sliders for variable fonts, and six colour themes
+(Classic, Dark, Sand, Light, Midnight, Sepia).
 
 ![Grid view in the light theme](docs/screenshots/grid-light.png)
 

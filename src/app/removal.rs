@@ -278,7 +278,8 @@ impl FontCraftApp {
                         };
                         let nothing = perm + moved + online_del + online_off == 0;
                         let fill = if perm > 0 { RED.gamma_multiply(0.85) } else { p.accent };
-                        let b = egui::Button::new(RichText::new(label).color(Color32::WHITE).strong()).fill(fill);
+                        let tc = if perm > 0 { Color32::WHITE } else { p.on_accent };
+                        let b = egui::Button::new(RichText::new(label).color(tc).strong()).fill(fill);
                         if ui.add_enabled(!nothing, b).clicked() {
                             go = true;
                         }
@@ -688,7 +689,7 @@ impl FontCraftApp {
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let b = egui::Button::new(RichText::new("Add folder").color(Color32::WHITE).strong()).fill(p.accent);
+                        let b = egui::Button::new(RichText::new("Add folder").color(p.on_accent).strong()).fill(p.accent);
                         if ui.add_enabled(!busy && !nd.address.trim().is_empty(), b).clicked() {
                             start = true;
                         }

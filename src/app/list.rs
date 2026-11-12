@@ -287,7 +287,7 @@ impl FontCraftApp {
             if self.cfg.folders.is_empty() {
                 ui.horizontal(|ui| {
                     ui.add_space(ui.available_width() / 2.0 - 120.0);
-                    if ui.add(egui::Button::new(RichText::new("Add folder…").color(Color32::WHITE)).fill(p.accent)).clicked() {
+                    if ui.add(egui::Button::new(RichText::new("Add folder…").color(p.on_accent)).fill(p.accent)).clicked() {
                         acts.push(Action::AddFolderDialog);
                     }
                     if ui.button("Import fonts…").clicked() {

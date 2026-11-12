@@ -1,5 +1,15 @@
 # What's new in FontCraft
 
+## 1.2.1
+
+### A new face for FontCraft
+* A new app icon: the platypus. It shows up on the window, the taskbar and the tray, on FontCraft.exe, in the
+  Mac app and in the Linux app menu.
+
+### New theme: Sand
+* A dark theme with the warm sand tone of the icon for highlights: active dots, sliders, buttons and selections.
+  Choose it in Settings › Colour theme, or with the theme button on the left.
+
 ## 1.2.0
 
 ### New: delete fonts from inside FontCraft

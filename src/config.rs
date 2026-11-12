@@ -24,6 +24,8 @@ pub enum Theme {
     Light,
     Midnight,
     Sepia,
+    /// dark, with the sand tone of the app icon for highlights
+    Sand,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

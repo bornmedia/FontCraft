@@ -40,7 +40,7 @@ pub fn hide(hwnd: isize) {
 }
 
 pub fn create(hwnd: Arc<AtomicIsize>, ctx: egui::Context) -> Result<Tray, String> {
-    let icon = crate::icon();
+    let icon = crate::icon_sized(32);
     let icon = Icon::from_rgba(icon.rgba, icon.width, icon.height).map_err(|e| e.to_string())?;
     let open = MenuItem::new("Show FontCraft", true, None);
     let off = MenuItem::new("Switch all fonts off", true, None);

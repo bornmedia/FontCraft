@@ -1,6 +1,6 @@
 [package]
 name = "fontcraft"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
 license = "MIT"
 description = "FontCraft - a free font manager: organise, preview and activate fonts without installing them."
@@ -23,6 +23,11 @@ walkdir = "2"
 flate2 = "1"
 # unpacking the family downloads of Fontshare and Font Squirrel
 zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[build-dependencies]
+# turning assets/icon.png into the Windows program icon (FontCraft.exe in Explorer and the taskbar)
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+embed-resource = "3"
 
 [target.'cfg(windows)'.dependencies]
 tray-icon = "0.21"
