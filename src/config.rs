@@ -34,6 +34,112 @@ pub enum ViewMode {
     Grid,
 }
 
+/// What to do with a font that is imported although it is already in the library.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub enum DupAction {
+    /// copy it anyway, next to the one already there
+    ImportDuplicate,
+    /// keep the one already in the library and don't copy the new one
+    UseExisting,
+    /// put the new one in place of the old one (same place: read it again)
+    Replace,
+    /// leave this font out of the import
+    Skip,
+}
+
+/// What happens with a folder that is dropped onto FontCraft or imported.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub enum FolderImport {
+    /// add the folder to the library where it is (nothing is copied)
+    AddInPlace,
+    /// copy all its fonts into the import folder, together
+    CopyTogether,
+    /// copy its fonts into the import folder, keeping its sub-folders
+    CopyKeepStructure,
+}
+
+/// A saved filter in the sidebar: the families for which all (or any) of the rules are true.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct SmartFilter {
+    pub id: u64,
+    pub name: String,
+    /// true: all rules must be true; false: any of them
+    pub all: bool,
+    pub rules: Vec<SmartRule>,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct SmartRule {
+    pub field: SmartField,
+    /// the second word of the rule: "is" / "is not", "contains" / "doesn't contain", "at least" / "fewer than"…
+    pub negate: bool,
+    pub value: String,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub enum SmartField {
+    Languages,
+    Category,
+    Activation,
+    Name,
+    Designer,
+    Tag,
+    Collection,
+    Format,
+    Variable,
+    Favorite,
+    Source,
+    Styles,
+    Added,
+}
+
+/// How the preview text sits in its row or tile.
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug, Default)]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+    /// full lines stretched to both edges, the last line on the left
+    JustifyLeft,
+    /// full lines stretched to both edges, the last line centred
+    JustifyCenter,
+    /// full lines stretched to both edges, the last line on the right
+    JustifyRight,
+}
+
+impl TextAlign {
+    pub const ALL: [TextAlign; 6] = [
+        TextAlign::Left,
+        TextAlign::Center,
+        TextAlign::Right,
+        TextAlign::JustifyLeft,
+        TextAlign::JustifyCenter,
+        TextAlign::JustifyRight,
+    ];
+    pub fn label(self) -> &'static str {
+        match self {
+            TextAlign::Left => "Align left",
+            TextAlign::Center => "Centre",
+            TextAlign::Right => "Align right",
+            TextAlign::JustifyLeft => "Justify, last line left",
+            TextAlign::JustifyCenter => "Justify, last line centred",
+            TextAlign::JustifyRight => "Justify, last line right",
+        }
+    }
+    /// where each line (and the last line of justified text) goes
+    pub fn halign(self) -> egui::Align {
+        match self {
+            TextAlign::Left | TextAlign::JustifyLeft => egui::Align::Min,
+            TextAlign::Center | TextAlign::JustifyCenter => egui::Align::Center,
+            TextAlign::Right | TextAlign::JustifyRight => egui::Align::Max,
+        }
+    }
+    pub fn justify(self) -> bool {
+        matches!(self, TextAlign::JustifyLeft | TextAlign::JustifyCenter | TextAlign::JustifyRight)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SortBy {
     NameAz,
@@ -56,7 +162,9 @@ pub struct Config {
     pub theme: Theme,
     pub tags: BTreeMap<String, BTreeSet<String>>,
     pub invert_preview: bool,
+    /// older versions only knew "centred"; read once and turned into `align`
     pub center_align: bool,
+    pub align: TextAlign,
     pub collapsed: BTreeSet<String>,
     pub view_mode: ViewMode,
     pub sort: SortBy,
@@ -84,6 +192,21 @@ pub struct Config {
     pub hide_to_tray: bool,
     /// the folder system fonts were last moved into instead of being deleted
     pub moved_dir: Option<PathBuf>,
+    /// widths of the sidebar and the font details panel, as the person dragged them
+    pub sidebar_w: f32,
+    pub details_w: f32,
+    pub smart_filters: Vec<SmartFilter>,
+    // importing
+    pub import_activate: bool,
+    pub import_report: bool,
+    pub import_collection: bool,
+    pub import_folders: FolderImport,
+    /// don't ask when a font is imported from the place it is already in the library from
+    pub dup_same_path_quiet: bool,
+    pub dup_same_path: DupAction,
+    /// don't ask when another copy of a font is already in the library
+    pub dup_quiet: bool,
+    pub dup_action: DupAction,
 }
 
 impl Default for Config {
@@ -100,6 +223,7 @@ impl Default for Config {
             tags: BTreeMap::new(),
             invert_preview: false,
             center_align: false,
+            align: TextAlign::Left,
             collapsed: BTreeSet::new(),
             view_mode: ViewMode::List,
             sort: SortBy::NameAz,
@@ -120,6 +244,17 @@ impl Default for Config {
             start_hidden: true,
             hide_to_tray: false,
             moved_dir: None,
+            sidebar_w: 200.0,
+            details_w: 420.0,
+            smart_filters: vec![],
+            import_activate: false,
+            import_report: true,
+            import_collection: false,
+            import_folders: FolderImport::AddInPlace,
+            dup_same_path_quiet: true,
+            dup_same_path: DupAction::UseExisting,
+            dup_quiet: false,
+            dup_action: DupAction::ImportDuplicate,
             tester_text: "Typography is the craft of endowing human language with a durable visual form. \
 Good type disappears into the reading; great type makes the reading a pleasure.\n\n\
 ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789 !?&@#%(){}[]"
@@ -167,10 +302,15 @@ impl Config {
 
 impl Config {
     pub fn load() -> Self {
-        std::fs::read_to_string(data_dir().join("settings.json"))
+        let mut c: Config = std::fs::read_to_string(data_dir().join("settings.json"))
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        if c.center_align {
+            c.align = TextAlign::Center;
+            c.center_align = false;
+        }
+        c
     }
     pub fn save(&self) {
         let dir = data_dir();

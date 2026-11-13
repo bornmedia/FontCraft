@@ -52,6 +52,11 @@ Right-click a font › *Delete…* (or select several and press Delete). FontCra
   needs itself are marked and left out by default, and FontCraft explains the risks on Windows, macOS and Linux.
   Your system asks for administrator permission where needed.
 
+### Smart filters and printing
+Save searches as smart filters ("Languages contains Arabic", "Category is Sans Serif", "Activation is Activated"…).
+Right-click a collection, tag or smart filter and choose **Print…** for a PDF of all its fonts with your preview
+text, size and colours – print it from your PDF app or save it.
+
 ### Collections and tags
 Drag fonts onto a collection or tag in the sidebar. Collections can be exported to a folder, printed as a specimen
 and exported as CSS. FontCraft also adds tags by itself (serif, sans, script, mono, heavy, condensed, high-contrast…).
@@ -107,8 +112,9 @@ the CSS or save it together with the font files.
 
 ![Playground](docs/screenshots/playground.png)
 
-### Grid view, waterfall and themes
-A compact grid, a waterfall of sizes, a type tester, sliders for variable fonts, and six colour themes
+### Tile view, alignment, waterfall and themes
+A list or a tile view (tiles of equal size that fill the window's width), six ways to align the preview text
+(left, centre, right and three kinds of justified), a waterfall of sizes, a type tester, sliders for variable fonts, and six colour themes
 (Classic, Dark, Sand, Light, Midnight, Sepia).
 
 ![Grid view in the light theme](docs/screenshots/grid-light.png)
@@ -119,6 +125,9 @@ A compact grid, a waterfall of sizes, a type tester, sliders for variable fonts,
 * **Sync:** keep collections, tags and favorites (and the fonts in your collections) in step across computers
   through Dropbox, Google Drive, OneDrive or iCloud Drive.
 * **Search:** type several words to match names, styles, designers, foundries and tags. The × clears the search.
+* **Keyboard shortcuts:** Ctrl+Shift+A / Ctrl+Shift+D (⌘⇧A / ⌘⇧D on a Mac) activate and deactivate the selected
+  fonts; F1 shows the full list (Settings › Keyboard shortcuts), with the key names of your keyboard.
+* **Adjustable panels:** drag the edge of the sidebar or the font details to the width you like.
 * **Autostart** when you sign in (Windows, macOS, Linux), and **hide to the system tray** when closing (Windows only).
 * Group styles into families your own way (right-click › *Change family name…*).
 

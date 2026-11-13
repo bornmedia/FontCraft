@@ -10,6 +10,7 @@ mod google;
 mod library;
 mod netfs;
 mod online;
+mod pdfprint;
 mod remove;
 mod sync;
 mod autoact;

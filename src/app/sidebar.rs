@@ -1,8 +1,18 @@
 //! The sidebar: library views, collections, tags, system fonts and the folder tree.
 
-use super::ui::{paint_dot, paint_icon, Icon, SIDEBAR_W};
+use super::ui::{paint_dot, paint_icon, Icon};
 use super::*;
 use egui::{pos2, vec2, Align2, FontId, Id, Rect, RichText, Sense, StrokeKind, Ui};
+
+pub(super) const SIDEBAR_MIN: f32 = 170.0;
+pub(super) const SIDEBAR_MAX: f32 = 460.0;
+pub(super) const DETAILS_MIN: f32 = 300.0;
+pub(super) const DETAILS_MAX: f32 = 1000.0;
+
+/// Is the mouse button held down (a panel edge still being dragged)? The width is saved once it's let go.
+fn ctx_dragging(ctx: &egui::Context) -> bool {
+    ctx.input(|i| i.pointer.any_down())
+}
 
 impl FontCraftApp {
     #[allow(clippy::too_many_arguments)]
@@ -128,6 +138,22 @@ impl FontCraftApp {
         });
     }
 
+    /// "Print…", "Save as PDF…" and the specimen sheet, for a collection, tag or smart filter.
+    fn print_items(ui: &mut Ui, fams: &[usize], title: &str, acts: &mut Vec<Action>) {
+        if ui.button("Print…").on_hover_text("A PDF of all its fonts with your preview text, size and colours").clicked() {
+            acts.push(Action::PrintPdf(fams.to_vec(), title.to_string(), false));
+            ui.close_menu();
+        }
+        if ui.button("Save as PDF…").clicked() {
+            acts.push(Action::PrintPdf(fams.to_vec(), title.to_string(), true));
+            ui.close_menu();
+        }
+        if ui.button("Specimen sheet (every style)…").on_hover_text("Opens in your browser").clicked() {
+            acts.push(Action::Specimen(fams.to_vec(), title.to_string()));
+            ui.close_menu();
+        }
+    }
+
     fn collection_menu(&mut self, ui: &mut Ui, id: u64, name: &str, synced: bool, fams: &[usize], acts: &mut Vec<Action>) {
         if ui.button("Rename").clicked() {
             self.renaming = Some((format!("c:{id}"), name.to_string()));
@@ -167,10 +193,7 @@ impl FontCraftApp {
                 ui.close_menu();
             }
         }
-        if ui.button("Print specimen…").clicked() {
-            acts.push(Action::Specimen(fams.to_vec(), name.to_string()));
-            ui.close_menu();
-        }
+        Self::print_items(ui, fams, name, acts);
         if ui.button("Export CSS…").clicked() {
             acts.push(Action::ExportCss(fams.to_vec(), name.to_string()));
             ui.close_menu();
@@ -184,10 +207,12 @@ impl FontCraftApp {
 
     pub(super) fn sidebar(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
         let p = self.p();
-        egui::SidePanel::left("side")
-            .exact_width(SIDEBAR_W)
-            .resizable(false)
-            .frame(egui::Frame::new().fill(p.side).inner_margin(egui::Margin { left: 6, right: 6, top: 10, bottom: 6 }))
+        // drag its right edge to make it wider or narrower; the width is remembered
+        let resp = egui::SidePanel::left("side")
+            .default_width(self.cfg.sidebar_w.clamp(SIDEBAR_MIN, SIDEBAR_MAX))
+            .width_range(SIDEBAR_MIN..=SIDEBAR_MAX)
+            .resizable(true)
+            .frame(egui::Frame::new().fill(p.side).inner_margin(egui::Margin { left: 6, right: 6, top: 4, bottom: 6 }))
             .show(ctx, |ui| {
                 egui::TopBottomPanel::bottom("sideadd")
                     .exact_height(34.0)
@@ -200,10 +225,94 @@ impl FontCraftApp {
                                 .on_hover_text("Add folders, import fonts, new collections and tags");
                         });
                     });
-                egui::ScrollArea::vertical().id_salt("sidescroll").auto_shrink([false, false]).show(ui, |ui| {
+                self.sidebar_body(ui, &p, acts, false, f32::INFINITY);
+            });
+        self.remember_width(resp.response.rect.width(), true);
+    }
+
+    /// The row above "All": on its right the arrow that hides the sidebar (or, in the sidebar that
+    /// pops out at the window's edge, keeps it open again). It shows while the mouse is over the sidebar.
+    fn sidebar_top_row(&mut self, ui: &mut Ui, p: &Pal, peek: bool) {
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+        let over = ui.ctx().pointer_hover_pos().map(|pp| ui.clip_rect().contains(pp)).unwrap_or(false) || self.demo_side;
+        let ar = Rect::from_center_size(pos2(row.right() - 12.0, row.center().y), vec2(24.0, 22.0));
+        let resp = ui.interact(ar, Id::new(("side-hide", peek)), Sense::click());
+        if over || peek {
+            if resp.hovered() {
+                ui.painter().rect_filled(ar, CornerRadius::same(5), p.hover);
+            }
+            let col = if resp.hovered() { p.text } else { p.weak };
+            // two chevrons: « hides the sidebar, » keeps it open
+            let dir = if peek { 1.0 } else { -1.0 };
+            let c = ar.center();
+            for dx in [-3.0, 2.0] {
+                let tip = c + vec2(dx + dir * 2.5, 0.0);
+                let back = c + vec2(dx - dir * 2.5, 0.0);
+                ui.painter().line_segment([pos2(back.x, c.y - 4.5), tip], Stroke::new(1.5_f32, col));
+                ui.painter().line_segment([pos2(back.x, c.y + 4.5), tip], Stroke::new(1.5_f32, col));
+            }
+        }
+        let tip = if peek {
+            "Keep the sidebar open".to_string()
+        } else {
+            format!(
+                "Hide the sidebar ({}). It comes back when the mouse goes to the left edge of the window.",
+                super::shortcuts::label(super::shortcuts::Cmd::Sidebar)
+            )
+        };
+        if resp.on_hover_text(tip).clicked() {
+            self.sidebar_open = peek;
+            self.side_peek = false;
+        }
+    }
+
+    /// While the sidebar is hidden: it pops out over the list when the mouse reaches the left edge of
+    /// the window, and goes away again when the mouse leaves it.
+    pub(super) fn sidebar_peek(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
+        let p = self.p();
+        let area = ctx.available_rect();
+        let pointer = ctx.pointer_hover_pos();
+        let strip = Rect::from_min_max(area.left_top(), pos2(area.left() + 10.0, area.bottom()));
+        if pointer.map(|pp| strip.contains(pp)).unwrap_or(false) || self.demo_side {
+            self.side_peek = true;
+        }
+        if !self.side_peek {
+            return;
+        }
+        let w = self.cfg.sidebar_w.clamp(SIDEBAR_MIN, SIDEBAR_MAX);
+        let rect = Rect::from_min_size(area.left_top(), vec2(w, area.height()));
+        egui::Area::new(Id::new("sidepeek")).order(egui::Order::Foreground).fixed_pos(rect.min).show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(p.side)
+                .stroke(Stroke::new(1.0_f32, p.line))
+                .shadow(ctx.style().visuals.popup_shadow)
+                .inner_margin(egui::Margin { left: 6, right: 6, top: 4, bottom: 6 })
+                .show(ui, |ui| {
+                    ui.set_width(w - 12.0);
+                    ui.set_height(area.height() - 10.0);
+                    self.sidebar_body(ui, &p, acts, true, area.height() - 10.0);
+                });
+        });
+        // it stays while the mouse is over it (with a little room), a menu from it is open, a name is
+        // being typed, or fonts are being dragged onto it
+        let inside = pointer.map(|pp| rect.expand(14.0).contains(pp)).unwrap_or(false);
+        let busy = ctx.memory(|m| m.any_popup_open()) || ctx.is_context_menu_open() || self.renaming.is_some();
+        if !inside && !busy && !self.demo_side {
+            self.side_peek = false;
+        }
+    }
+
+    /// What the sidebar shows: the arrow row, the library views, collections, tags, providers and folders.
+    fn sidebar_body(&mut self, ui: &mut Ui, p: &Pal, acts: &mut Vec<Action>, peek: bool, max_h: f32) {
+        let p = *p;
+        self.sidebar_top_row(ui, &p, peek);
+        {
+            {
+                egui::ScrollArea::vertical().id_salt("sidescroll").max_height(max_h - 30.0).auto_shrink([false, false]).show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     self.sidebar_library(ui, &p, acts);
                     self.sidebar_collections(ui, &p, acts);
+                    self.sidebar_smart(ui, &p, acts);
                     self.sidebar_tags(ui, &p, acts);
                     let (open, _) = self.section_header(ui, "sec:providers", "PROVIDERS", None);
                     if open {
@@ -239,9 +348,23 @@ impl FontCraftApp {
                         }
                     }
                     self.sidebar_folders(ui, &p, acts);
+                    if peek {
+                        ui.add_space(8.0);
+                        ui.menu_button(RichText::new("➕  Add").size(12.5).color(p.text), |ui| self.app_menu(ui, acts));
+                    }
                     ui.add_space(12.0);
                 });
-            });
+            }
+        }
+    }
+
+    /// Keep the width the person dragged a side panel to (`sidebar`: the left one, else the details).
+    pub(super) fn remember_width(&mut self, w: f32, sidebar: bool) {
+        let slot = if sidebar { &mut self.cfg.sidebar_w } else { &mut self.cfg.details_w };
+        if (*slot - w).abs() > 0.5 && !ctx_dragging(&self.ctx) {
+            *slot = w;
+            self.dirty = true;
+        }
     }
 
     fn sidebar_library(&mut self, ui: &mut Ui, p: &Pal, acts: &mut Vec<Action>) {
@@ -326,6 +449,61 @@ impl FontCraftApp {
         }
     }
 
+    fn sidebar_smart(&mut self, ui: &mut Ui, p: &Pal, acts: &mut Vec<Action>) {
+        let (open, plus) = self.section_header(ui, "sec:smart", "SMART FILTERS", Some("New smart filter"));
+        if plus {
+            acts.push(Action::NewSmart);
+        }
+        if !open {
+            return;
+        }
+        if self.cfg.smart_filters.is_empty() {
+            Self::hint_line(ui, p, "Saved searches: language,\ncategory, activation… Press +");
+        }
+        let list: Vec<(u64, String)> = self.cfg.smart_filters.iter().map(|s| (s.id, s.name.clone())).collect();
+        for (id, name) in list {
+            let v = View::Smart(id);
+            let fams = self.families_in_view(&v);
+            let state = self.fams_state(&fams);
+            let (r, d, _) = Self::side_item(ui, p, Id::new(("smart", id)), 1, Some((state, None)), &name, Some(fams.len()), self.view == v, None);
+            if d.map(|d| d.clicked()).unwrap_or(false) {
+                acts.push(Action::SetFamilies(fams.clone(), !(state.0 == state.1 && state.1 > 0)));
+            }
+            if r.clicked() {
+                acts.push(Action::SetView(v.clone()));
+            }
+            if r.double_clicked() {
+                acts.push(Action::EditSmart(id));
+            }
+            r.context_menu(|ui| {
+                if ui.button("Edit…").clicked() {
+                    acts.push(Action::EditSmart(id));
+                    ui.close_menu();
+                }
+                if ui.button("Duplicate…").clicked() {
+                    acts.push(Action::DuplicateSmart(id));
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.button("Switch all on").clicked() {
+                    acts.push(Action::SetFamilies(fams.clone(), true));
+                    ui.close_menu();
+                }
+                if ui.button("Switch all off").clicked() {
+                    acts.push(Action::SetFamilies(fams.clone(), false));
+                    ui.close_menu();
+                }
+                ui.separator();
+                Self::print_items(ui, &fams, &name, acts);
+                ui.separator();
+                if ui.button("Delete smart filter").on_hover_text("The fonts stay where they are").clicked() {
+                    acts.push(Action::DeleteSmart(id));
+                    ui.close_menu();
+                }
+            });
+        }
+    }
+
     fn sidebar_tags(&mut self, ui: &mut Ui, p: &Pal, acts: &mut Vec<Action>) {
         let (open, plus) = self.section_header(ui, "sec:tags", "TAGS", Some("New tag"));
         if plus {
@@ -379,10 +557,9 @@ impl FontCraftApp {
                     acts.push(Action::SetFamilies(fams.clone(), false));
                     ui.close_menu();
                 }
-                if ui.button("Print specimen…").clicked() {
-                    acts.push(Action::Specimen(fams.clone(), format!("#{t}")));
-                    ui.close_menu();
-                }
+                ui.separator();
+                Self::print_items(ui, &fams, &format!("#{t}"), acts);
+                ui.separator();
                 if ui.button("Delete tag").clicked() {
                     acts.push(Action::DeleteTag(t.clone()));
                     ui.close_menu();

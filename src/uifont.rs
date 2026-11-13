@@ -71,6 +71,11 @@ fn any_system_font() -> Option<FontData> {
     None
 }
 
+/// The file of the interface font (for text FontCraft draws itself, e.g. in printed PDFs).
+pub fn interface_font_file() -> Option<PathBuf> {
+    candidates().0.into_iter().find(|p| load(p).is_some())
+}
+
 /// Font set for the window, built from the computer's own fonts.
 pub fn definitions() -> FontDefinitions {
     let mut defs = FontDefinitions::empty();

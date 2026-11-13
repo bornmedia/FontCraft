@@ -3,11 +3,15 @@
 mod details;
 mod finder;
 mod gview;
+mod import;
 mod list;
 mod misc;
 mod playground;
+mod printing;
 mod removal;
 mod settings;
+mod shortcuts;
+mod smart;
 mod sidebar;
 mod ui;
 
@@ -53,6 +57,8 @@ pub struct Family {
     pub search_extra: String,
     pub shapes: Vec<crate::library::Shape>,
     pub auto_tags: Vec<&'static str>,
+    /// languages any of its styles has letters for (bits of `library::LANGUAGES`)
+    pub scripts: u32,
 }
 
 pub struct FolderNode {
@@ -78,6 +84,8 @@ pub enum View {
     Folder(PathBuf),
     Collection(u64),
     Tag(String),
+    /// a smart filter (saved rules)
+    Smart(u64),
     Finder,
 }
 
@@ -131,6 +139,13 @@ enum Action {
     RenameFamily(Vec<usize>),
     /// open the "Delete fonts" window for these families
     Delete(Vec<usize>),
+    /// make a PDF of these families (title; true = ask where to save it, else open it to print)
+    PrintPdf(Vec<usize>, String, bool),
+    /// smart filters: new / edit / duplicate / delete
+    NewSmart,
+    EditSmart(u64),
+    DuplicateSmart(u64),
+    DeleteSmart(u64),
     NetworkFolderDialog,
 }
 
@@ -294,6 +309,18 @@ pub(crate) fn scroll_speed(level: u8) -> f32 {
     }
 }
 
+/// The colour theme after this one (the theme button and its shortcut go round all of them).
+pub(crate) fn next_theme(t: Theme) -> Theme {
+    match t {
+        Theme::Dark => Theme::Sand,
+        Theme::Sand => Theme::Light,
+        Theme::Light => Theme::Midnight,
+        Theme::Midnight => Theme::Sepia,
+        Theme::Sepia => Theme::Classic,
+        Theme::Classic => Theme::Dark,
+    }
+}
+
 fn in_range(v: f32, r: (f32, f32)) -> bool {
     v >= r.0 - 1e-4 && v <= r.1 + 1e-4
 }
@@ -392,6 +419,26 @@ pub struct FontCraftApp {
     net_folders: Vec<PathBuf>,
     /// the app icon, for the About part of the settings
     logo: Option<egui::TextureHandle>,
+    /// the page shown in the settings window
+    settings_page: settings::Page,
+    /// how many tiles are in a row right now (for the arrow keys)
+    tile_cols: usize,
+    /// scroll the list so that this entry of `visible` can be seen
+    scroll_to: Option<usize>,
+    /// the font list's scroll position and visible height in the last frame
+    list_scroll: (f32, f32),
+    /// the hidden sidebar is popped out at the window's left edge right now
+    side_peek: bool,
+    /// (pictures for a check: show the sidebar's arrow and pop-out without a mouse)
+    demo_side: bool,
+    /// a PDF being made: (file, pages) or what went wrong
+    print_rx: Option<Receiver<Result<(PathBuf, usize), String>>>,
+    /// the smart filter being edited (and whether it is a new one)
+    smart_edit: Option<(config::SmartFilter, bool)>,
+    /// an import waiting for the answer about fonts already in the library
+    import_ask: Option<import::ImportPlan>,
+    /// what the last import did (shown as a report)
+    import_done: Option<import::ImportReport>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -415,7 +462,11 @@ impl FontCraftApp {
         if cfg.machine_id.is_empty() {
             cfg.machine_id = format!("{:016x}", activation::fnv(&format!("{:?}{}", SystemTime::now(), std::process::id())));
         }
-        cc.egui_ctx.options_mut(|o| o.line_scroll_speed = scroll_speed(cfg.scroll_speed));
+        cc.egui_ctx.options_mut(|o| {
+            o.line_scroll_speed = scroll_speed(cfg.scroll_speed);
+            // Ctrl/⌘ with + − 0 change the preview size (see shortcuts.rs), not the whole window
+            o.zoom_with_keyboard = false;
+        });
         let cache: ScanCache = config::load_cache();
         let rx = library::spawn_scan(Self::scan_folders(&cfg), cache, cc.egui_ctx.clone());
         let view = if cfg.folders.is_empty() { View::Installed } else { View::All };
@@ -443,6 +494,16 @@ impl FontCraftApp {
             offline: HashSet::new(),
             net_folders: vec![],
             logo: None,
+            settings_page: settings::Page::Appearance,
+            tile_cols: 1,
+            scroll_to: None,
+            list_scroll: (0.0, 0.0),
+            side_peek: false,
+            demo_side: false,
+            print_rx: None,
+            smart_edit: None,
+            import_ask: None,
+            import_done: None,
             google,
             gcat: vec![],
             gstates: [GState::Loading, GState::Loading, GState::Loading],
@@ -516,6 +577,59 @@ impl FontCraftApp {
             }
             if s.contains("settings") {
                 app.show_settings = true;
+            }
+            if s.contains("shortcuts") {
+                app.show_settings = true;
+                app.settings_page = settings::Page::Shortcuts;
+            }
+            if s.contains("fontlistpage") {
+                app.show_settings = true;
+                app.settings_page = settings::Page::FontList;
+            }
+            if s.contains("importpage") {
+                app.show_settings = true;
+                app.settings_page = settings::Page::Import;
+            }
+            if s.contains("importask") {
+                let win = std::env::var_os("WINDIR").map(PathBuf::from).unwrap_or_default().join("Fonts");
+                let dup = |f: &str| import::Dup { src: PathBuf::from(format!("D:/Downloads/{f}")), rel: PathBuf::from(f), existing: win.join(f) };
+                app.import_ask = Some(import::ImportPlan {
+                    new: vec![(PathBuf::from("D:/Downloads/New.ttf"), PathBuf::from("New.ttf"))],
+                    same_path: vec![],
+                    dups: vec![dup("arial.ttf"), dup("georgia.ttf")],
+                    bad: vec![],
+                    families: BTreeSet::new(),
+                    same_choice: config::DupAction::UseExisting,
+                    dup_choice: config::DupAction::ImportDuplicate,
+                    remember: false,
+                });
+            }
+            if s.contains("smartnew") {
+                app.smart_new();
+                if let Some((sf, _)) = &mut app.smart_edit {
+                    sf.name = "Arabic sans".into();
+                    sf.rules = vec![
+                        config::SmartRule { field: config::SmartField::Languages, negate: false, value: "Arabic".into() },
+                        config::SmartRule { field: config::SmartField::Category, negate: false, value: "Sans Serif".into() },
+                        config::SmartRule { field: config::SmartField::Activation, negate: false, value: "Activated".into() },
+                    ];
+                }
+            }
+            if s.contains("peek") {
+                app.sidebar_open = false;
+                app.demo_side = true;
+            }
+            if s.contains("sidearrow") {
+                app.demo_side = true;
+            }
+            if s.contains("tiles") {
+                app.cfg.view_mode = config::ViewMode::Grid;
+            }
+            if s.contains("justify") {
+                app.cfg.align = config::TextAlign::JustifyCenter;
+            }
+            if s.contains("google") {
+                app.view = View::Online(Provider::Google);
             }
         }
         if let Ok(s) = std::env::var("FONTCRAFT_SOURCE") {
@@ -806,6 +920,7 @@ impl FontCraftApp {
                     search_extra: String::new(),
                     shapes: vec![],
                     auto_tags: vec![],
+                    scripts: 0,
                 });
                 self.families.len() - 1
             });
@@ -843,6 +958,7 @@ impl FontCraftApp {
             }
             extra.push_str(&format!(" {}", pm.copyright));
             fam.shapes = fam.faces.iter().filter_map(|i| faces[*i].meta.shape).collect();
+            fam.scripts = fam.faces.iter().fold(0, |b, i| b | faces[*i].meta.scripts);
             fam.auto_tags = auto_tags(&pm.class, pm.shape, fam.mono, fam.variable, fam.italic);
             for t in &fam.auto_tags {
                 extra.push(' ');
@@ -1019,6 +1135,13 @@ impl FontCraftApp {
                     View::Favorites => self.in_named_set(f, &self.cfg.favorites),
                     View::Installed => f.system,
                     View::Collection(_) | View::Tag(_) => self.in_named_set(f, coll),
+                    View::Smart(id) => self
+                        .cfg
+                        .smart_filters
+                        .iter()
+                        .find(|s| s.id == *id)
+                        .map(|s| (!f.system || self.cfg.show_system) && self.smart_matches(s, *i))
+                        .unwrap_or(false),
                     View::Folder(_) | View::Online(_) | View::Finder => false,
                 }
             })
@@ -1204,6 +1327,7 @@ impl FontCraftApp {
             View::Tag(t) => format!("#{t}"),
             View::Online(p) => p.label().into(),
             View::Finder => "Font finder".into(),
+            View::Smart(id) => self.cfg.smart_filters.iter().find(|s| s.id == *id).map(|s| s.name.clone()).unwrap_or_default(),
         }
     }
 
@@ -1496,6 +1620,17 @@ impl FontCraftApp {
                     self.set_status(format!("Copied “{s}”"));
                 }
                 Action::Delete(fams) => self.open_delete(fams),
+                Action::PrintPdf(fams, title, save) => self.print_pdf(fams, title, save),
+                Action::NewSmart => self.smart_new(),
+                Action::EditSmart(id) => self.smart_edit_open(id),
+                Action::DuplicateSmart(id) => self.smart_duplicate(id),
+                Action::DeleteSmart(id) => {
+                    self.cfg.smart_filters.retain(|s| s.id != id);
+                    if self.view == View::Smart(id) {
+                        self.view = View::All;
+                    }
+                    self.dirty = true;
+                }
                 Action::NetworkFolderDialog => {
                     if self.netdlg.is_none() {
                         self.netdlg = Some(removal::NetDialog { address: String::new(), error: None, busy: None });
@@ -1583,16 +1718,12 @@ impl FontCraftApp {
         }
     }
 
+    /// Import font files (copied into the import folder); fonts already in the library are handled
+    /// as set in Settings › Import (see `import.rs`).
     fn import_files(&mut self, files: Vec<PathBuf>) {
-        let dest = self.cfg.import_dir();
-        let n = extras::copy_files(&files, &dest);
-        if !self.cfg.folders.contains(&dest) {
-            self.cfg.folders.push(dest.clone());
-        }
-        self.dirty = true;
-        self.set_status(format!("Imported {n} font file{}", if n == 1 { "" } else { "s" }));
-        self.view = View::Folder(dest);
-        self.rescan();
+        let items: Vec<(PathBuf, PathBuf)> =
+            files.into_iter().filter_map(|f| f.file_name().map(|n| PathBuf::from(n)).map(|n| (f, n))).collect();
+        self.import_start(items);
     }
 
     fn click_family(&mut self, fi: usize, ctrl: bool, shift: bool) {
@@ -1677,6 +1808,10 @@ impl FontCraftApp {
             s.spacing.interact_size.y = 24.0;
             s.spacing.slider_width = 130.0;
             s.spacing.menu_margin = egui::Margin::same(8);
+            // Scroll bars sit still: shown (and given their own room) whenever a list is longer than
+            // its space, hidden when everything fits. Floating bars that grow under the mouse made
+            // the edge of the details panel flicker while it was dragged.
+            s.spacing.scroll = egui::style::ScrollStyle { bar_width: 8.0, ..egui::style::ScrollStyle::solid() };
         });
     }
 
@@ -1810,6 +1945,8 @@ impl eframe::App for FontCraftApp {
         self.rail(ctx);
         if self.sidebar_open {
             self.sidebar(ctx, &mut acts);
+        } else {
+            self.sidebar_peek(ctx, &mut acts);
         }
         if self.primary.is_none() && self.gsel.is_some() && matches!(self.view, View::Online(_) | View::Finder) {
             self.google_details(ctx, &mut acts);
@@ -1830,6 +1967,10 @@ impl eframe::App for FontCraftApp {
             self.family_rename_window(ctx);
         }
         self.poll_delete();
+        self.poll_print();
+        self.smart_window(ctx);
+        self.import_ask_window(ctx);
+        self.import_report_window(ctx);
         self.delete_window(ctx);
         self.delete_report_window(ctx);
         self.network_window(ctx);

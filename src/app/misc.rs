@@ -4,58 +4,112 @@ use super::*;
 use egui::{pos2, vec2, Align2, FontFamily, FontId, Id, Rect};
 
 impl FontCraftApp {
+    /// Keyboard shortcuts (the list is in `shortcuts.rs`, and in Settings › Keyboard shortcuts).
     pub(super) fn keyboard(&mut self, ctx: &egui::Context, acts: &mut Vec<Action>) {
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::F)) {
-            self.search_focus = true;
-        }
-        if ctx.memory(|m| m.focused().is_some()) {
+        use shortcuts::Cmd;
+        // a question window (delete, network folder, family name) has the keyboard to itself
+        if self.delete.is_some() || self.netdlg.is_some() || self.family_rename.is_some() {
             return;
         }
-        if self.delete.is_some() || self.netdlg.is_some() {
-            return;
-        }
-        let (up, down, space, all, esc, del) = ctx.input(|i| {
-            (
-                i.key_pressed(egui::Key::ArrowUp),
-                i.key_pressed(egui::Key::ArrowDown),
-                i.key_pressed(egui::Key::Space),
-                i.modifiers.command && i.key_pressed(egui::Key::A),
-                i.key_pressed(egui::Key::Escape),
-                i.key_pressed(egui::Key::Delete),
-            )
-        });
-        if del && !self.selected.is_empty() && !matches!(self.view, View::Online(_) | View::Finder) {
-            acts.push(Action::Delete(self.selected.iter().copied().collect()));
-        }
-        if (up || down) && !self.visible.is_empty() {
-            let pos = self.primary.and_then(|p| self.visible.iter().position(|x| *x == p));
-            let next = match pos {
-                None => 0,
-                Some(k) if up => k.saturating_sub(1),
-                Some(k) => (k + 1).min(self.visible.len() - 1),
-            };
-            acts.push(Action::Click(self.visible[next], false, false));
-        }
-        if space && !self.selected.is_empty() {
-            let sel: Vec<usize> = self.selected.iter().copied().collect();
-            let any_inactive = sel.iter().any(|f| {
-                let (a, n) = self.fam_state(*f);
-                a < n
-            });
-            acts.push(Action::SetFamilies(sel, any_inactive));
-        }
-        if all {
-            self.selected = self.visible.iter().copied().collect();
-        }
-        if esc {
-            if self.selected.len() > 1 {
-                self.selected.clear();
-                if let Some(p) = self.primary {
-                    self.selected.insert(p);
+        let typing = ctx.memory(|m| m.focused().is_some());
+        let sel: Vec<usize> = self.selected.iter().copied().collect();
+        let library = !matches!(self.view, View::Online(_) | View::Finder);
+        for cmd in shortcuts::pressed(ctx, typing) {
+            match cmd {
+                Cmd::Activate | Cmd::Deactivate if !sel.is_empty() => acts.push(Action::SetFamilies(sel.clone(), cmd == Cmd::Activate)),
+                Cmd::Toggle if !sel.is_empty() => {
+                    let any_inactive = sel.iter().any(|f| {
+                        let (a, n) = self.fam_state(*f);
+                        a < n
+                    });
+                    acts.push(Action::SetFamilies(sel.clone(), any_inactive));
                 }
-            } else {
-                self.selected.clear();
-                self.primary = None;
+                Cmd::Delete if !sel.is_empty() && library => acts.push(Action::Delete(sel.clone())),
+                Cmd::Favorite if !sel.is_empty() => acts.push(Action::ToggleFavorite(sel.clone())),
+                Cmd::Rename if !sel.is_empty() => acts.push(Action::RenameFamily(sel.clone())),
+                Cmd::CopyName if !sel.is_empty() => {
+                    let names: Vec<String> = sel.iter().map(|f| self.families[*f].name.clone()).collect();
+                    acts.push(Action::Copy(names.join(", ")));
+                }
+                Cmd::Reveal => {
+                    if let Some(fi) = self.primary.filter(|f| *f < self.families.len()) {
+                        let face = self.families[fi].primary;
+                        acts.push(Action::ShowInFolder(self.faces[face].meta.path.clone()));
+                    }
+                }
+                Cmd::Print if !sel.is_empty() => {
+                    let title = if sel.len() == 1 { self.families[sel[0]].name.clone() } else { format!("{} families", sel.len()) };
+                    acts.push(Action::Specimen(sel.clone(), title));
+                }
+                Cmd::Up | Cmd::Down | Cmd::Left | Cmd::Right | Cmd::First | Cmd::Last if library && !self.visible.is_empty() => {
+                    let n = self.visible.len();
+                    let tiles = self.cfg.view_mode == config::ViewMode::Grid;
+                    // in the tile view up/down go a whole row
+                    let step = if tiles { self.tile_cols.max(1) } else { 1 };
+                    let pos = self.primary.and_then(|p| self.visible.iter().position(|x| *x == p));
+                    let next = match (cmd, pos) {
+                        (Cmd::First, _) => 0,
+                        (Cmd::Last, _) => n - 1,
+                        (Cmd::Left | Cmd::Right, _) if !tiles => continue,
+                        (_, None) => 0,
+                        (Cmd::Up, Some(k)) => k.saturating_sub(step),
+                        (Cmd::Down, Some(k)) => (k + step).min(n - 1),
+                        (Cmd::Left, Some(k)) => k.saturating_sub(1),
+                        (_, Some(k)) => (k + 1).min(n - 1),
+                    };
+                    acts.push(Action::Click(self.visible[next], false, false));
+                    self.scroll_to = Some(next);
+                }
+                Cmd::SelectAll if library => self.selected = self.visible.iter().copied().collect(),
+                Cmd::Escape => {
+                    if self.selected.len() > 1 {
+                        self.selected.clear();
+                        if let Some(p) = self.primary {
+                            self.selected.insert(p);
+                        }
+                    } else {
+                        self.selected.clear();
+                        self.primary = None;
+                        self.gsel = None;
+                    }
+                }
+                Cmd::ListView | Cmd::TileView => {
+                    self.cfg.view_mode = if cmd == Cmd::ListView { config::ViewMode::List } else { config::ViewMode::Grid };
+                    self.dirty = true;
+                }
+                Cmd::Bigger | Cmd::Smaller => {
+                    let step = if cmd == Cmd::Bigger { 4.0 } else { -4.0 };
+                    self.cfg.preview_size = (self.cfg.preview_size + step).clamp(8.0, 200.0);
+                    self.dirty = true;
+                }
+                Cmd::ResetSize => {
+                    let d = Config::default();
+                    self.cfg.preview_size = d.preview_size;
+                    self.cfg.preview_text = d.preview_text;
+                    self.dirty = true;
+                }
+                Cmd::Sidebar => self.sidebar_open = !self.sidebar_open,
+                Cmd::Invert => {
+                    self.cfg.invert_preview = !self.cfg.invert_preview;
+                    self.dirty = true;
+                }
+                Cmd::Theme => {
+                    self.cfg.theme = next_theme(self.cfg.theme);
+                    self.dirty = true;
+                }
+                Cmd::Search => self.search_focus = true,
+                Cmd::Finder => acts.push(Action::SetView(View::Finder)),
+                Cmd::AddFolder => acts.push(Action::AddFolderDialog),
+                Cmd::Import => acts.push(Action::ImportDialog),
+                Cmd::NewCollection => acts.push(Action::NewCollection(sel.clone())),
+                Cmd::NewTag => acts.push(Action::NewTag(sel.clone())),
+                Cmd::Rescan => acts.push(Action::Rescan),
+                Cmd::Settings => self.show_settings = !self.show_settings,
+                Cmd::Help => {
+                    self.show_settings = true;
+                    self.settings_page = settings::Page::Shortcuts;
+                }
+                _ => {}
             }
         }
     }
@@ -112,20 +166,25 @@ impl FontCraftApp {
         if dropped.is_empty() {
             return;
         }
-        let mut files = vec![];
+        // fonts and folders go in one import (folders are added or copied as set in Settings › Import)
+        let mut items: Vec<(PathBuf, PathBuf)> = vec![];
+        let mut dirs = vec![];
         for p in dropped {
             if p.is_dir() {
-                self.add_folder(p);
+                dirs.push(p);
             } else if library::is_font_file(&p) {
-                files.push(p);
+                if let Some(n) = p.file_name() {
+                    items.push((p.clone(), PathBuf::from(n)));
+                }
             } else if finder::is_image(&p) {
                 self.finder_load_path(p);
             } else if crate::autoact::is_document(&p) {
                 self.autoact.check(p, false);
             }
         }
-        if !files.is_empty() {
-            self.import_files(files);
+        items.extend(self.folder_items(dirs));
+        if !items.is_empty() {
+            self.import_start(items);
         }
     }
 

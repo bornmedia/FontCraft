@@ -893,7 +893,7 @@ impl FontCraftApp {
             let prev = Rect::from_min_max(pos2(x0 + 20.0, rect.top() + 26.0), pos2(rect.right() - 150.0, rect.bottom()));
             let pp = ui.painter_at(prev);
             match self.loader.family(c.id, &c.path, c.index) {
-                Some(ff) => paint_on_baseline(&pp, prev, &preview_text, FontId::new(size, ff), p.text, false, None),
+                Some(ff) => paint_on_baseline(&pp, prev, &preview_text, FontId::new(size, ff), p.text, config::TextAlign::Left, None),
                 None => {
                     let w = (prev.width() * 0.5).min(size * preview_text.chars().count() as f32 * 0.45);
                     pp.rect_filled(Rect::from_min_size(prev.min + vec2(2.0, size * 0.2), vec2(w, size * 0.75)), CornerRadius::same(4), p.skeleton);

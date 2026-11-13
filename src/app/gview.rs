@@ -4,7 +4,7 @@
 use super::list::paint_on_baseline;
 use super::ui::paint_dot;
 use super::*;
-use egui::{pos2, vec2, Align, Align2, FontFamily, FontId, Id, Layout, Rect, RichText, Sense, Ui};
+use egui::{pos2, vec2, Align, Align2, FontFamily, FontId, Id, Layout, Rect, RichText, Sense, StrokeKind, Ui};
 
 const CATEGORIES: [(&str, Option<&str>); 6] = [
     ("All", None),
@@ -101,19 +101,56 @@ impl FontCraftApp {
     }
 
     fn google_list(&mut self, ui: &mut Ui, acts: &mut Vec<Action>) {
-        let p = self.p();
         let size = self.cfg.preview_size;
-        let row_h = (22.0 + size * 1.25 + 6.0).round();
-        let text = if self.cfg.preview_text.is_empty() { "The quick brown fox".to_string() } else { self.cfg.preview_text.clone() };
-        let (bg, fg) = if self.cfg.invert_preview { (Some(p.text), p.content) } else { (None, p.text) };
-        let center = self.cfg.center_align;
         let n = self.gvisible.len();
         let mut click: Option<usize> = None;
-        egui::ScrollArea::vertical().id_salt("glist").auto_shrink([false, false]).show_rows(ui, row_h, n, |ui, range| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for i in range {
-                let gi = self.gvisible[i];
-                let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::hover());
+        if self.cfg.view_mode == config::ViewMode::Grid {
+            // tiles: all the same size, as many per row as the window's width allows
+            let (cols, w, h) = super::list::tile_layout(ui.available_width() - 28.0, size);
+            let gap = super::list::TILE_GAP;
+            let rows = n.div_ceil(cols);
+            egui::ScrollArea::vertical().id_salt("ggrid").auto_shrink([false, false]).show_rows(ui, h + gap, rows, |ui, range| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for r in range {
+                    let (row_rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), h + gap), Sense::hover());
+                    for c in 0..cols {
+                        let k = r * cols + c;
+                        if k >= n {
+                            break;
+                        }
+                        let rect = Rect::from_min_size(pos2(row_rect.left() + 14.0 + c as f32 * (w + gap), row_rect.top() + gap / 2.0), vec2(w, h));
+                        let gi = self.gvisible[k];
+                        self.google_item(ui, rect, gi, true, acts, &mut click);
+                    }
+                }
+            });
+        } else {
+            let row_h = (22.0 + size * 1.25 + 6.0).round();
+            egui::ScrollArea::vertical().id_salt("glist").auto_shrink([false, false]).show_rows(ui, row_h, n, |ui, range| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for i in range {
+                    let gi = self.gvisible[i];
+                    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::hover());
+                    self.google_item(ui, rect, gi, false, acts, &mut click);
+                }
+            });
+        }
+        if let Some(gi) = click {
+            self.gsel = Some(gi);
+            self.primary = None;
+            self.selected.clear();
+        }
+    }
+
+    /// One family of an online source, as a row of the list or (`tile`) as a tile.
+    fn google_item(&mut self, ui: &mut Ui, rect: Rect, gi: usize, tile: bool, acts: &mut Vec<Action>, click: &mut Option<usize>) {
+        let p = self.p();
+        let size = self.cfg.preview_size;
+        let text = if self.cfg.preview_text.is_empty() { "The quick brown fox".to_string() } else { self.cfg.preview_text.clone() };
+        let (bg, fg) = if self.cfg.invert_preview { (Some(p.text), p.content) } else { (None, p.text) };
+        let align = self.cfg.align;
+        {
+            {
                 let id = Id::new(("grow", gi));
                 let resp = ui.interact(rect, id, Sense::click());
                 let key = self.gcat[gi].key();
@@ -121,17 +158,28 @@ impl FontCraftApp {
                 let lib_fam = faces.first().map(|f| self.face_fam[*f]);
                 let selected = self.gsel == Some(gi) || lib_fam.map(|f| self.selected.contains(&f)).unwrap_or(false);
                 let painter = ui.painter_at(rect);
-                if let Some(bg) = bg {
-                    painter.rect_filled(rect, CornerRadius::ZERO, bg);
+                if tile {
+                    let stroke = if selected {
+                        Stroke::new(1.5_f32, p.accent)
+                    } else if resp.hovered() {
+                        Stroke::new(1.0_f32, p.weak)
+                    } else {
+                        Stroke::new(1.0_f32, p.line)
+                    };
+                    painter.rect(rect, CornerRadius::same(8), bg.unwrap_or(p.card), stroke, StrokeKind::Inside);
+                } else {
+                    if let Some(bg) = bg {
+                        painter.rect_filled(rect, CornerRadius::ZERO, bg);
+                    }
+                    let band = rect.shrink2(vec2(6.0, 1.0));
+                    if selected {
+                        painter.rect_filled(band, CornerRadius::same(6), if bg.is_some() { p.accent.gamma_multiply(0.35) } else { p.sel });
+                    } else if resp.hovered() && bg.is_none() {
+                        painter.rect_filled(band, CornerRadius::same(6), p.hover);
+                    }
                 }
-                let band = rect.shrink2(vec2(6.0, 1.0));
-                if selected {
-                    painter.rect_filled(band, CornerRadius::same(6), if bg.is_some() { p.accent.gamma_multiply(0.35) } else { p.sel });
-                } else if resp.hovered() && bg.is_none() {
-                    painter.rect_filled(band, CornerRadius::same(6), p.hover);
-                }
-                let hy = rect.top() + 12.0;
-                let x0 = rect.left() + 18.0;
+                let hy = rect.top() + if tile { 18.0 } else { 12.0 };
+                let x0 = rect.left() + if tile { 12.0 } else { 18.0 };
                 let hcol = if bg.is_some() { fg } else { p.text };
                 let state = self.faces_state(&faces);
                 let dc = pos2(x0 + 4.0, hy);
@@ -148,9 +196,11 @@ impl FontCraftApp {
                     paint_dot(&painter, dc, if faces.is_empty() { (0, 1) } else { state }, &pp, if dresp.hovered() { 4.6 } else { 4.0 });
                 }
                 let g = &self.gcat[gi];
-                let nr = painter.text(pos2(x0 + 15.0, hy), Align2::LEFT_CENTER, &g.name, FontId::proportional(11.5), hcol.gamma_multiply(0.85));
-                let cr = painter.text(pos2(nr.right() + 7.0, hy), Align2::LEFT_CENTER, &g.kind, FontId::proportional(10.5), hcol.gamma_multiply(0.6));
-                let sr = painter.text(pos2(cr.right() + 6.0, hy), Align2::LEFT_CENTER, g.nstyles.to_string(), FontId::proportional(11.0), hcol);
+                // (in a tile the header is cut off at the tile's edge)
+                let head = ui.painter_at(Rect::from_min_max(rect.min, pos2(rect.right() - if tile { 10.0 } else { 0.0 }, rect.bottom())));
+                let nr = head.text(pos2(x0 + 15.0, hy), Align2::LEFT_CENTER, &g.name, FontId::proportional(11.5), hcol.gamma_multiply(0.85));
+                let cr = head.text(pos2(nr.right() + 7.0, hy), Align2::LEFT_CENTER, &g.kind, FontId::proportional(10.5), hcol.gamma_multiply(0.6));
+                let sr = head.text(pos2(cr.right() + 6.0, hy), Align2::LEFT_CENTER, g.nstyles.to_string(), FontId::proportional(11.0), hcol);
                 let mut extra = String::new();
                 if !g.axes.is_empty() {
                     extra.push_str("variable  ");
@@ -158,13 +208,18 @@ impl FontCraftApp {
                 if !faces.is_empty() {
                     extra.push_str("in library");
                 }
-                if !extra.is_empty() {
-                    painter.text(pos2(sr.right() + 8.0, hy), Align2::LEFT_CENTER, extra.trim(), FontId::proportional(10.5), hcol.gamma_multiply(0.5));
+                if !extra.is_empty() && !tile {
+                    head.text(pos2(sr.right() + 8.0, hy), Align2::LEFT_CENTER, extra.trim(), FontId::proportional(10.5), hcol.gamma_multiply(0.5));
                 }
-                let prev_rect = Rect::from_min_max(pos2(rect.left() + 14.0, rect.top() + 20.0), pos2(rect.right() - 40.0, rect.bottom()));
+                let prev_rect = if tile {
+                    Rect::from_min_max(pos2(rect.left() + 12.0, rect.top() + 32.0), pos2(rect.right() - 12.0, rect.bottom() - 10.0))
+                } else {
+                    Rect::from_min_max(pos2(rect.left() + 14.0, rect.top() + 20.0), pos2(rect.right() - 40.0, rect.bottom()))
+                };
                 let pp_ = ui.painter_at(prev_rect);
+                let wrap = tile.then_some(prev_rect.width());
                 match self.gpreview_font(gi) {
-                    (Some(ff), _) => paint_on_baseline(&pp_, prev_rect, &text, FontId::new(size, ff), fg, center, None),
+                    (Some(ff), _) => paint_on_baseline(&pp_, prev_rect, &text, FontId::new(size, ff), fg, align, wrap),
                     (None, Some(why)) => {
                         pp_.text(prev_rect.left_top() + vec2(2.0, 6.0), Align2::LEFT_TOP, why, FontId::proportional(13.0), p.weak);
                     }
@@ -199,7 +254,7 @@ impl FontCraftApp {
                             acts.push(Action::Click(fi, m.command, m.shift));
                             self.gsel = None;
                         }
-                        None => click = Some(gi),
+                        None => *click = Some(gi),
                     }
                 }
                 if resp.double_clicked() && faces.is_empty() && !busy {
@@ -207,11 +262,6 @@ impl FontCraftApp {
                 }
                 resp.context_menu(|ui| self.google_menu(ui, gi, acts));
             }
-        });
-        if let Some(gi) = click {
-            self.gsel = Some(gi);
-            self.primary = None;
-            self.selected.clear();
         }
     }
 
@@ -276,10 +326,10 @@ impl FontCraftApp {
         let (font, why) = self.gpreview_font(gi);
         let g = self.gcat[gi].clone();
         let busy = self.gjobs.contains(&g.key());
-        egui::SidePanel::right("details")
-            .default_width(420.0)
-            .min_width(320.0)
-            .max_width(760.0)
+        use super::sidebar::{DETAILS_MAX, DETAILS_MIN};
+        let panel = egui::SidePanel::right("details")
+            .default_width(self.cfg.details_w.clamp(DETAILS_MIN, DETAILS_MAX))
+            .width_range(DETAILS_MIN..=DETAILS_MAX)
             .resizable(true)
             .frame(egui::Frame::new().fill(p.detail).inner_margin(egui::Margin::symmetric(18, 14)).stroke(Stroke::new(1.0_f32, p.line)))
             .show(ctx, |ui| {
@@ -379,6 +429,7 @@ impl FontCraftApp {
                     }
                 });
             });
+        self.remember_width(panel.response.rect.width(), false);
         if close {
             self.gsel = None;
         }

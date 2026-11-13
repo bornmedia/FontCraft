@@ -45,6 +45,51 @@ pub struct FaceMeta {
     /// serif / sans / script / display / symbol (from the font's PANOSE class), or empty.
     #[serde(default)]
     pub class: String,
+    /// The languages / writing systems it has letters for: one bit per entry of `LANGUAGES`.
+    #[serde(default)]
+    pub scripts: u32,
+}
+
+/// Languages and writing systems, each with letters a font needs to have for it.
+pub const LANGUAGES: &[(&str, &str)] = &[
+    ("Latin (Western Europe)", "aeéèüöñçßAÉ"),
+    ("Central European", "ąčęłőřšžĄŁ"),
+    ("Vietnamese", "ơưạảấầẩẫậắđ"),
+    ("Turkish", "ğışĞİŞ"),
+    ("Greek", "αβγδΩΣ"),
+    ("Cyrillic", "абвгджЖЯ"),
+    ("Arabic", "ابتثجح"),
+    ("Hebrew", "אבגדה"),
+    ("Devanagari (Hindi)", "कखगघ"),
+    ("Bengali", "কখগঘ"),
+    ("Tamil", "கஙசஞ"),
+    ("Thai", "กขฃค"),
+    ("Armenian", "ԱԲԳաբգ"),
+    ("Georgian", "აბგდ"),
+    ("Chinese", "中文字国"),
+    ("Japanese", "あいうアイウ"),
+    ("Korean", "한글가나"),
+];
+
+/// Which of `LANGUAGES` the face has all letters for.
+fn scripts_of(face: &Face) -> u32 {
+    let mut bits = 0;
+    for (k, (_, chars)) in LANGUAGES.iter().enumerate() {
+        if chars.chars().all(|c| face.glyph_index(c).is_some()) {
+            bits |= 1 << k;
+        }
+    }
+    bits
+}
+
+/// Only the languages of the faces in a file (for fonts read by an older FontCraft).
+fn add_scripts(path: &Path, faces: &mut [FaceMeta]) {
+    let Ok(data) = std::fs::read(path) else { return };
+    for f in faces {
+        if let Ok(face) = Face::parse(&data, f.index) {
+            f.scripts = scripts_of(&face);
+        }
+    }
 }
 
 /// Shape measurements, each 0..1.
@@ -271,9 +316,37 @@ pub fn parse_file(path: &Path) -> Vec<FaceMeta> {
             file_size: data.len() as u64,
             shape: measure_shape(&data, index, &face),
             class: panose_class(&face),
+            scripts: scripts_of(&face),
             family,
             style,
         });
+    }
+    out
+}
+
+/// What makes two fonts "the same font" when importing: the PostScript name, or (when a font
+/// has none) its full name and style.
+pub fn font_key(postscript: &str, full_name: &str, style: &str) -> String {
+    if postscript.trim().is_empty() {
+        format!("{}#{}", full_name.trim().to_lowercase(), style.trim().to_lowercase())
+    } else {
+        postscript.trim().to_lowercase()
+    }
+}
+
+/// The keys (see `font_key`) and family names of the faces in a file, read quickly (names only).
+/// Empty when the file is no readable font.
+pub fn quick_names(path: &Path) -> Vec<(String, String)> {
+    let Ok(data) = std::fs::read(path) else { return vec![] };
+    let n = ttf_parser::fonts_in_collection(&data).unwrap_or(1);
+    let mut out = vec![];
+    for i in 0..n.min(64) {
+        let Ok(face) = Face::parse(&data, i) else { continue };
+        let ps = name_of(&face, name_id::POST_SCRIPT_NAME).unwrap_or_default();
+        let family = name_of(&face, name_id::TYPOGRAPHIC_FAMILY).or_else(|| name_of(&face, name_id::FAMILY)).unwrap_or_default();
+        let style = name_of(&face, name_id::TYPOGRAPHIC_SUBFAMILY).or_else(|| name_of(&face, name_id::SUBFAMILY)).unwrap_or_default();
+        let full = name_of(&face, name_id::FULL_NAME).unwrap_or_else(|| format!("{family} {style}"));
+        out.push((font_key(&ps, &full, &style), family));
     }
     out
 }
@@ -290,7 +363,7 @@ pub struct CacheEntry {
     pub version: u32,
 }
 
-const CACHE_VERSION: u32 = 3;
+const CACHE_VERSION: u32 = 4;
 
 pub type ScanCache = HashMap<String, CacheEntry>;
 
@@ -396,6 +469,13 @@ pub fn spawn_scan(folders: Vec<PathBuf>, cache: ScanCache, ctx: egui::Context) -
             let stamp = file_stamp(&p).unwrap_or((0, 0));
             let entry = match cache.get(&key) {
                 Some(c) if c.mtime == stamp.0 && c.size == stamp.1 && c.version == CACHE_VERSION => c.clone(),
+                // read by FontCraft 1.2: only the languages are new
+                Some(c) if c.mtime == stamp.0 && c.size == stamp.1 && c.version == 3 => {
+                    let mut c = c.clone();
+                    add_scripts(&p, &mut c.faces);
+                    c.version = CACHE_VERSION;
+                    c
+                }
                 _ => CacheEntry { mtime: stamp.0, size: stamp.1, faces: parse_file(&p), version: CACHE_VERSION },
             };
             for f in &entry.faces {

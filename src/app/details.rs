@@ -34,10 +34,11 @@ impl FontCraftApp {
         }
         let p = self.p();
         let mut close = false;
-        egui::SidePanel::right("details")
-            .default_width(420.0)
-            .min_width(320.0)
-            .max_width(760.0)
+        use super::sidebar::{DETAILS_MAX, DETAILS_MIN};
+        // drag its left edge to make it wider or narrower; the width is remembered
+        let panel = egui::SidePanel::right("details")
+            .default_width(self.cfg.details_w.clamp(DETAILS_MIN, DETAILS_MAX))
+            .width_range(DETAILS_MIN..=DETAILS_MAX)
             .resizable(true)
             .frame(egui::Frame::new().fill(p.detail).inner_margin(egui::Margin::symmetric(18, 14)).stroke(Stroke::new(1.0_f32, p.line)))
             .show(ctx, |ui| {
@@ -157,6 +158,7 @@ impl FontCraftApp {
                     Tab::Playground => self.tab_playground(ui, fi),
                 }
             });
+        self.remember_width(panel.response.rect.width(), false);
         if close {
             self.primary = None;
             self.selected.clear();

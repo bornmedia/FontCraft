@@ -3,7 +3,6 @@
 use super::*;
 use egui::{pos2, vec2, Align, Align2, FontId, Id, Layout, Painter, Rect, RichText, Sense, StrokeKind, Ui};
 
-pub(super) const SIDEBAR_W: f32 = 200.0;
 const RAIL_W: f32 = 44.0;
 
 pub(super) fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
@@ -37,7 +36,6 @@ pub(super) enum Icon {
     List,
     Grid,
     Invert,
-    Align,
     Reset,
     Folder,
     Theme,
@@ -46,6 +44,12 @@ pub(super) enum Icon {
     Filter,
     Plus,
     Finder,
+    Keyboard,
+    Bolt,
+    Power,
+    Cloud,
+    Rocket,
+    Import,
 }
 
 pub(super) fn paint_icon(painter: &Painter, r: Rect, icon: Icon, col: Color32, bg: Color32) {
@@ -76,11 +80,6 @@ pub(super) fn paint_icon(painter: &Painter, r: Rect, icon: Icon, col: Color32, b
                 col,
             );
             painter.rect_stroke(rr, CornerRadius::same(4), Stroke::new(1.2_f32, col), StrokeKind::Inside);
-        }
-        Icon::Align => {
-            for (dy, w) in [(-5.0, 14.0), (-1.7, 9.0), (1.7, 14.0), (5.0, 9.0)] {
-                painter.hline(c.x - 7.0..=c.x - 7.0 + w, c.y + dy, s);
-            }
         }
         Icon::Reset => {
             let rad = 6.0;
@@ -142,6 +141,52 @@ pub(super) fn paint_icon(painter: &Painter, r: Rect, icon: Icon, col: Color32, b
             painter.circle_filled(g, 4.2, bg);
             painter.circle_stroke(g, 3.2, Stroke::new(1.5_f32, col));
             painter.line_segment([g + vec2(2.3, 2.3), g + vec2(5.0, 5.0)], Stroke::new(1.8_f32, col));
+        }
+        Icon::Keyboard => {
+            let kb = Rect::from_center_size(c, vec2(18.0, 12.0));
+            painter.rect_stroke(kb, CornerRadius::same(2), s, StrokeKind::Middle);
+            for row in 0..2 {
+                for k in 0..4 {
+                    let p = pos2(kb.left() + 3.5 + k as f32 * 3.7, kb.top() + 3.5 + row as f32 * 3.0);
+                    painter.rect_filled(Rect::from_center_size(p, vec2(1.8, 1.6)), CornerRadius::ZERO, col);
+                }
+            }
+            painter.hline(c.x - 4.0..=c.x + 4.0, kb.bottom() - 2.5, s);
+        }
+        Icon::Bolt => {
+            let pts = vec![c + vec2(1.5, -8.0), c + vec2(-5.0, 1.0), c + vec2(-0.5, 1.0), c + vec2(-1.5, 8.0), c + vec2(5.0, -1.0), c + vec2(0.5, -1.0)];
+            painter.add(egui::Shape::closed_line(pts, s));
+        }
+        Icon::Power => {
+            let pts: Vec<egui::Pos2> = (0..=24)
+                .map(|i| {
+                    let a = -std::f32::consts::FRAC_PI_2 + 0.75 + i as f32 / 24.0 * (std::f32::consts::TAU - 1.5);
+                    pos2(c.x + 7.0 * a.cos(), c.y + 7.0 * a.sin())
+                })
+                .collect();
+            painter.add(egui::Shape::line(pts, s));
+            painter.vline(c.x, c.y - 8.0..=c.y - 1.0, s);
+        }
+        Icon::Cloud => {
+            painter.circle_stroke(c + vec2(-4.0, 1.5), 3.5, s);
+            painter.circle_stroke(c + vec2(1.0, -1.5), 4.5, s);
+            painter.circle_stroke(c + vec2(5.0, 2.0), 3.0, s);
+            painter.rect_filled(Rect::from_min_max(c + vec2(-4.0, 0.5), c + vec2(5.0, 4.5)), CornerRadius::ZERO, bg);
+            painter.hline(c.x - 4.0..=c.x + 5.0, c.y + 5.0, s);
+        }
+        Icon::Rocket => {
+            // a little arrow going up out of a tray: start-up
+            painter.vline(c.x, c.y - 7.0..=c.y + 2.0, s);
+            painter.line_segment([c + vec2(-3.5, -3.5), c + vec2(0.0, -7.0)], s);
+            painter.line_segment([c + vec2(3.5, -3.5), c + vec2(0.0, -7.0)], s);
+            painter.add(egui::Shape::line(vec![c + vec2(-7.0, 1.0), c + vec2(-7.0, 6.0), c + vec2(7.0, 6.0), c + vec2(7.0, 1.0)], s));
+        }
+        Icon::Import => {
+            // an arrow going down into a tray
+            painter.vline(c.x, c.y - 8.0..=c.y + 1.0, s);
+            painter.line_segment([c + vec2(-3.5, -2.5), c + vec2(0.0, 1.0)], s);
+            painter.line_segment([c + vec2(3.5, -2.5), c + vec2(0.0, 1.0)], s);
+            painter.add(egui::Shape::line(vec![c + vec2(-7.0, 1.0), c + vec2(-7.0, 6.0), c + vec2(7.0, 6.0), c + vec2(7.0, 1.0)], s));
         }
         Icon::Plus => {
             painter.circle_filled(c, 7.0, col);
@@ -206,6 +251,12 @@ impl FontCraftApp {
         }
         if ui.button("Import fonts…").clicked() {
             acts.push(Action::ImportDialog);
+            ui.close_menu();
+        }
+        if ui.button("Import a folder…").on_hover_text("Added or copied as set in Settings › Import").clicked() {
+            if let Some(d) = rfd::FileDialog::new().set_title("Import a folder of fonts").pick_folder() {
+                self.import_folders(vec![d]);
+            }
             ui.close_menu();
         }
         if ui
@@ -426,14 +477,7 @@ impl FontCraftApp {
                     self.gsel = None;
                 }
                 if icon_button(ui, &p, sz, Icon::Theme, false, "Colour theme (click to switch)").clicked() {
-                    self.cfg.theme = match self.cfg.theme {
-                        Theme::Dark => Theme::Sand,
-                        Theme::Sand => Theme::Light,
-                        Theme::Light => Theme::Midnight,
-                        Theme::Midnight => Theme::Sepia,
-                        Theme::Sepia => Theme::Classic,
-                        Theme::Classic => Theme::Dark,
-                    };
+                    self.cfg.theme = next_theme(self.cfg.theme);
                     self.dirty = true;
                 }
                 if icon_button(ui, &p, sz, Icon::Gear, self.show_settings, "Settings").clicked() {
