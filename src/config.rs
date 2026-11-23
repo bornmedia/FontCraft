@@ -34,6 +34,82 @@ pub enum ViewMode {
     Grid,
 }
 
+/// A column of the font list's information line (above each preview).
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug, Hash)]
+pub enum Column {
+    Name,
+    Styles,
+    Format,
+    Category,
+    Source,
+    Designer,
+    Foundry,
+    Languages,
+    Version,
+    Added,
+    Tags,
+}
+
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize, Debug)]
+pub struct ColumnCfg {
+    pub column: Column,
+    pub width: f32,
+    pub shown: bool,
+}
+
+impl Column {
+    pub const ALL: [Column; 11] = [
+        Column::Name,
+        Column::Styles,
+        Column::Format,
+        Column::Category,
+        Column::Source,
+        Column::Designer,
+        Column::Foundry,
+        Column::Languages,
+        Column::Version,
+        Column::Added,
+        Column::Tags,
+    ];
+    pub fn title(self) -> &'static str {
+        match self {
+            Column::Name => "Name",
+            Column::Styles => "Styles",
+            Column::Format => "Format",
+            Column::Category => "Category",
+            Column::Source => "Source",
+            Column::Designer => "Designer",
+            Column::Foundry => "Foundry",
+            Column::Languages => "Languages",
+            Column::Version => "Version",
+            Column::Added => "Added",
+            Column::Tags => "Tags",
+        }
+    }
+    /// The columns a new list starts with (the rest can be switched on).
+    pub fn defaults() -> Vec<ColumnCfg> {
+        Column::ALL
+            .iter()
+            .map(|c| {
+                let (width, shown) = match c {
+                    Column::Name => (230.0, true),
+                    Column::Styles => (56.0, true),
+                    Column::Format => (64.0, true),
+                    Column::Category => (96.0, true),
+                    Column::Source => (150.0, true),
+                    Column::Designer => (150.0, false),
+                    Column::Foundry => (150.0, false),
+                    Column::Languages => (150.0, false),
+                    Column::Version => (90.0, false),
+                    Column::Added => (96.0, false),
+                    Column::Tags => (220.0, true),
+                };
+                ColumnCfg { column: *c, width, shown }
+            })
+            .collect()
+    }
+}
+
 /// What to do with a font that is imported although it is already in the library.
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub enum DupAction {
@@ -200,6 +276,10 @@ pub struct Config {
     pub standard_folder: Option<PathBuf>,
     /// online sources the person switched off ("google", "fontshare", "fontsquirrel")
     pub hidden_providers: BTreeSet<String>,
+    /// searching also shows the best matching collections, tags and folders
+    pub search_groups: bool,
+    /// the columns of the font list's information line, in their order
+    pub columns: Vec<ColumnCfg>,
     // importing
     pub import_activate: bool,
     pub import_report: bool,
@@ -253,6 +333,8 @@ impl Default for Config {
             smart_filters: vec![],
             standard_folder: None,
             hidden_providers: BTreeSet::new(),
+            search_groups: true,
+            columns: Column::defaults(),
             import_activate: false,
             import_report: true,
             import_collection: false,
@@ -316,6 +398,19 @@ impl Config {
             c.align = TextAlign::Center;
             c.center_align = false;
         }
+        // every column once (also ones added in a later version), in the saved order
+        let mut cols: Vec<ColumnCfg> = vec![];
+        for cc in c.columns.iter().chain(Column::defaults().iter()) {
+            if !cols.iter().any(|x| x.column == cc.column) {
+                cols.push(*cc);
+            }
+        }
+        if !cols.iter().any(|x| x.column == Column::Name && x.shown) {
+            if let Some(n) = cols.iter_mut().find(|x| x.column == Column::Name) {
+                n.shown = true;
+            }
+        }
+        c.columns = cols;
         c
     }
     pub fn save(&self) {

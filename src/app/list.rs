@@ -278,12 +278,17 @@ impl FontCraftApp {
                     self.selection_bar(ui, acts);
                 }
                 ui.add_space(4.0);
+                // while searching: the best matching collections, tags and folders (the fonts keep their order)
+                self.search_groups(ui, &p, acts);
                 if self.visible.is_empty() {
                     self.empty_state(ui, acts);
                     return;
                 }
                 match self.cfg.view_mode {
-                    config::ViewMode::List => self.list_view(ui, acts),
+                    config::ViewMode::List => {
+                        self.columns_header(ui, &p);
+                        self.list_view(ui, acts)
+                    }
                     config::ViewMode::Grid => self.grid_view(ui, acts),
                 }
             });
@@ -469,40 +474,8 @@ impl FontCraftApp {
                 let dresp = ui.interact(Rect::from_center_size(dc, vec2(16.0, 16.0)), id.with("dot"), Sense::click());
                 let pp = Pal { text: hcol, ..p };
                 paint_dot(&painter, dc, state, &pp, if dresp.hovered() { 4.6 } else { 4.0 });
-                let nr = painter.text(pos2(x0 + 15.0, hy), Align2::LEFT_CENTER, &fam.name, FontId::proportional(11.5), hcol.gamma_multiply(0.85));
-                let fr = painter.text(pos2(nr.right() + 7.0, hy), Align2::LEFT_CENTER, &fam.ext, FontId::proportional(10.5), hcol.gamma_multiply(0.6));
-                let cr = painter.text(pos2(fr.right() + 6.0, hy), Align2::LEFT_CENTER, fam.faces.len().to_string(), FontId::proportional(11.0), hcol);
-                let mut tx = cr.right() + 10.0;
-                if fam.system {
-                    let r = painter.text(pos2(tx, hy), Align2::LEFT_CENTER, "installed", FontId::proportional(10.5), hcol.gamma_multiply(0.5));
-                    tx = r.right() + 8.0;
-                }
-                // the same style in more than one file (all copies are listed in the details)
-                let dups = fam.files.len().saturating_sub(fam.faces.len());
-                if dups > 0 {
-                    let t = if dups == 1 { "1 duplicate".to_string() } else { format!("{dups} duplicates") };
-                    let r = painter.text(pos2(tx, hy), Align2::LEFT_CENTER, t, FontId::proportional(10.5), p.accent);
-                    tx = r.right() + 8.0;
-                }
-                // your own tags first (as chips), then the ones FontCraft worked out
-                let limit = rect.right() - 60.0;
-                for (t, set) in &self.cfg.tags {
-                    if !set.contains(&fam.name) || tx > limit {
-                        continue;
-                    }
-                    let g = painter.layout_no_wrap(t.clone(), FontId::proportional(10.5), hcol);
-                    let chip = Rect::from_min_size(pos2(tx, hy - 8.0), vec2(g.size().x + 12.0, 16.0));
-                    painter.rect_filled(chip, CornerRadius::same(8), p.accent.gamma_multiply(0.25));
-                    painter.galley(pos2(tx + 6.0, hy - g.size().y / 2.0), g, hcol);
-                    tx = chip.right() + 5.0;
-                }
-                for t in &fam.auto_tags {
-                    if tx > limit {
-                        break;
-                    }
-                    let r = painter.text(pos2(tx, hy), Align2::LEFT_CENTER, *t, FontId::proportional(10.5), hcol.gamma_multiply(0.45));
-                    tx = r.right() + 7.0;
-                }
+                // the information line: the columns chosen in the list's header (the preview below stays as it is)
+                self.paint_info_line(&painter, rect, hy, fi, hcol, &p);
                 let prev_rect = Rect::from_min_max(pos2(rect.left() + 14.0, rect.top() + 20.0), pos2(rect.right() - 40.0, rect.bottom()));
                 let pp_ = ui.painter_at(prev_rect);
                 // right-to-left fonts get a sample in their script; such text is shaped and set right to left

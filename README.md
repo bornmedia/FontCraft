@@ -130,6 +130,9 @@ A list or a tile view (tiles of equal size that fill the window's width), six wa
 * **Sync:** keep collections, tags and favorites (and the fonts in your collections) in step across computers
   through Dropbox, Google Drive, OneDrive or iCloud Drive.
 * **Search:** type several words to match names, styles, designers, foundries and tags. The × clears the search.
+  Matching collections, tags and folders show up above the fonts.
+* **Columns:** Name, Styles, Format, Category, Source, Designer, Foundry, Languages, Version, Added and Tags on the
+  line above each preview. Drag to resize; the ⋯ in the header shows, hides and reorders them.
 * **Keyboard shortcuts:** Ctrl+Shift+A / Ctrl+Shift+D (⌘⇧A / ⌘⇧D on a Mac) activate and deactivate the selected
   fonts; F1 shows the full list (Settings › Keyboard shortcuts), with the key names of your keyboard.
 * **Adjustable panels:** drag the edge of the sidebar or the font details to the width you like.

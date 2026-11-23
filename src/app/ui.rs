@@ -349,6 +349,15 @@ impl FontCraftApp {
                 let fresp = fresp.on_hover_text("Filter, sort and Super search");
                 egui::popup_below_widget(ui, popup, &fresp, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                     ui.set_min_width(250.0);
+                    ui.label(RichText::new("SEARCH ALSO FINDS").size(11.0).color(p.weak));
+                    if ui
+                        .checkbox(&mut self.cfg.search_groups, "Collections, tags and folders")
+                        .on_hover_text("Shows the best matching collections, tags and folders above the fonts while you search")
+                        .changed()
+                    {
+                        self.dirty = true;
+                    }
+                    ui.separator();
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("SUPER SEARCH").size(11.0).color(p.weak));
                         if self.shape_active() && ui.small_button("Reset").clicked() {

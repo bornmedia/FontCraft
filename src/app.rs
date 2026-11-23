@@ -1,5 +1,6 @@
 //! FontCraft: state, library logic and the frame loop. Drawing lives in `ui` and `details`.
 
+mod columns;
 mod details;
 mod finder;
 mod gview;
@@ -615,6 +616,16 @@ impl FontCraftApp {
             if s.contains("fontlistpage") {
                 app.show_settings = true;
                 app.settings_page = settings::Page::FontList;
+            }
+            if let Some(q) = s.split(',').find_map(|p| p.strip_prefix("search=")) {
+                app.search = q.to_string();
+            }
+            if s.contains("morecols") {
+                for c in app.cfg.columns.iter_mut() {
+                    if matches!(c.column, config::Column::Designer | config::Column::Languages | config::Column::Added) {
+                        c.shown = true;
+                    }
+                }
             }
             if s.contains("hideproviders") {
                 for p in Provider::ALL {

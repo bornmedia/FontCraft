@@ -1,5 +1,21 @@
 # What's new in FontCraft
 
+## 1.3.3
+
+### Search also finds collections, tags and folders
+* While you search, a short line above the fonts shows the one or two best matching collections, tags and folders,
+  with how many fonts each has. Click one to open it. When nothing matches, the line isn't shown, and the font list
+  itself is sorted just as before.
+* Switch it off with the filter button next to the search box › "Collections, tags and folders".
+
+### More columns, your way
+* The line above each preview now has columns with a header: Name, Styles, Format, Category, Source and Tags, plus
+  Designer, Foundry, Languages, Version and Added (date) if you want them. The previews and the size slider stay as
+  they were.
+* Drag the edge between two column titles to make a column wider or narrower. The ⋯ at the end of the header (or a
+  right-click on it) lets you show or hide columns, change their order and go back to the standard columns.
+  FontCraft remembers your choice. Columns that don't fit in a narrow window are left out until there's room.
+
 ## 1.3.2
 
 ### New: make a new font folder from inside FontCraft
