@@ -1,7 +1,8 @@
 //! FontCraft: state, library logic and the frame loop. Drawing lives in `ui` and `details`.
 
-mod columns;
+mod cachewin;
 mod details;
+mod facts;
 mod finder;
 mod gview;
 mod import;
@@ -99,6 +100,7 @@ enum Tab {
     Styles,
     Glyphs,
     Waterfall,
+    Print,
     Tester,
     Variable,
     Playground,
@@ -146,6 +148,7 @@ enum Action {
     Delete(Vec<usize>),
     /// open the "New font folder" window (Some: inside this folder)
     NewFolder(Option<PathBuf>),
+    CleanCaches,
     /// make a PDF of these families (title; true = ask where to save it, else open it to print)
     PrintPdf(Vec<usize>, String, bool),
     /// smart filters: new / edit / duplicate / delete
@@ -448,7 +451,7 @@ pub struct FontCraftApp {
     /// (pictures for a check: show the sidebar's arrow and pop-out without a mouse)
     demo_side: bool,
     /// a PDF being made: (file, pages) or what went wrong
-    print_rx: Option<Receiver<Result<(PathBuf, usize), String>>>,
+    print_rx: Option<Receiver<Result<(PathBuf, String), String>>>,
     /// the smart filter being edited (and whether it is a new one)
     smart_edit: Option<(config::SmartFilter, bool)>,
     /// an import waiting for the answer about fonts already in the library
@@ -463,6 +466,9 @@ pub struct FontCraftApp {
     folder_dirs: Vec<PathBuf>,
     /// the "New font folder" window: (name, where)
     new_folder: Option<(String, String)>,
+    cache_win: Option<cachewin::CacheWin>,
+    /// a panel width being dragged (font panel, sidebar), kept when the mouse is let go
+    resizing: [Option<f32>; 2],
     /// the + of the sidebar section drawn last (its menu opens below it)
     plus_resp: Option<egui::Response>,
 }
@@ -534,6 +540,8 @@ impl FontCraftApp {
             ui_font_file: crate::uifont::interface_font_file(),
             folder_dirs: vec![],
             new_folder: None,
+            cache_win: None,
+            resizing: [None, None],
             plus_resp: None,
             google,
             gcat: vec![],
@@ -620,12 +628,14 @@ impl FontCraftApp {
             if let Some(q) = s.split(',').find_map(|p| p.strip_prefix("search=")) {
                 app.search = q.to_string();
             }
-            if s.contains("morecols") {
-                for c in app.cfg.columns.iter_mut() {
-                    if matches!(c.column, config::Column::Designer | config::Column::Languages | config::Column::Added) {
-                        c.shown = true;
-                    }
-                }
+            if s.contains("printtab") {
+                app.tab = Tab::Print;
+            }
+            if s.contains("glyphtab") {
+                app.tab = Tab::Glyphs;
+            }
+            if s.contains("caches") {
+                app.cache_open();
             }
             if s.contains("hideproviders") {
                 for p in Provider::ALL {
@@ -904,6 +914,12 @@ impl FontCraftApp {
                 if s.contains("dupfamily") {
                     if let Some(fi) = self.families.iter().position(|f| f.name == "SchwartauDisplay07") {
                         self.view = View::All;
+                        self.selected = [fi].into();
+                        self.primary = Some(fi);
+                    }
+                }
+                if let Some(name) = s.split(',').find_map(|p| p.strip_prefix("font=")) {
+                    if let Some(fi) = self.families.iter().position(|f| f.name.eq_ignore_ascii_case(name)) {
                         self.selected = [fi].into();
                         self.primary = Some(fi);
                     }
@@ -1715,6 +1731,7 @@ impl FontCraftApp {
                 }
                 Action::Delete(fams) => self.open_delete(fams),
                 Action::NewFolder(inside) => self.new_folder_open(inside),
+                Action::CleanCaches => self.cache_open(),
                 Action::PrintPdf(fams, title, save) => self.print_pdf(fams, title, save),
                 Action::NewSmart => self.smart_new(),
                 Action::EditSmart(id) => self.smart_edit_open(id),
@@ -2074,6 +2091,7 @@ impl eframe::App for FontCraftApp {
         self.smart_window(ctx);
         self.import_ask_window(ctx);
         self.new_folder_window(ctx);
+        self.cache_window(ctx);
         self.import_report_window(ctx);
         self.delete_window(ctx);
         self.delete_report_window(ctx);

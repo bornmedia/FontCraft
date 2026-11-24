@@ -70,6 +70,22 @@ impl FontCraftApp {
                 let styles = format!("{nfaces} style{}", if nfaces == 1 { "" } else { "s" });
                 let line = if src.is_empty() { styles } else { format!("{styles} · {src}") };
                 ui.label(RichText::new(line).color(p.weak).size(12.0));
+                // what FontCraft knows about the family: format, category, designer, languages, date added…
+                let facts: Vec<(&str, String)> = self.family_facts(fi).into_iter().filter(|(k, _)| !matches!(*k, "Styles" | "Source")).collect();
+                if !facts.is_empty() {
+                    egui::CollapsingHeader::new(RichText::new("About this font").size(12.0).color(p.weak))
+                        .id_salt("aboutfont")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            egui::Grid::new(("facts", fi)).num_columns(2).spacing([12.0, 3.0]).show(ui, |ui| {
+                                for (k, v) in &facts {
+                                    ui.label(RichText::new(*k).size(11.5).color(p.weak));
+                                    ui.add(egui::Label::new(RichText::new(v).size(12.0).color(p.text)).wrap());
+                                    ui.end_row();
+                                }
+                            });
+                        });
+                }
                 // the same style in more than one file (for example imported as a duplicate): shown once in
                 // the list; here every such style with its files – the first is the original, the others
                 // are marked as duplicates. Other styles of the family are not duplicates and aren't listed.
@@ -150,7 +166,7 @@ impl FontCraftApp {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 12.0;
                     ui.spacing_mut().button_padding.x = 0.0;
-                    let mut tabs = vec![(Tab::Styles, "Styles"), (Tab::Glyphs, "Glyphs"), (Tab::Waterfall, "Waterfall"), (Tab::Tester, "Tester")];
+                    let mut tabs = vec![(Tab::Styles, "Styles"), (Tab::Glyphs, "Glyphs"), (Tab::Waterfall, "Waterfall"), (Tab::Print, "Print"), (Tab::Tester, "Tester")];
                     if has_var {
                         tabs.push((Tab::Variable, "Variable"));
                     }
@@ -178,6 +194,7 @@ impl FontCraftApp {
                     Tab::Styles => self.tab_styles(ui, fi, acts),
                     Tab::Glyphs => self.tab_glyphs(ui, fi),
                     Tab::Waterfall => self.tab_waterfall(ui, fi),
+                    Tab::Print => self.tab_print(ui, fi),
                     Tab::Tester => self.tab_tester(ui, fi),
                     Tab::Variable => self.tab_variable(ui, fi),
                     Tab::Info => self.tab_info(ui, fi, acts),
@@ -284,6 +301,29 @@ impl FontCraftApp {
         });
     }
 
+    /// "Print all glyphs at 12 pt": every glyph of the style, one size, as many pages as it takes.
+    fn glyph_print_row(&mut self, ui: &mut Ui, face: usize) {
+        let p = self.p();
+        let busy = self.print_rx.is_some();
+        let before = self.cfg.print_sheet.glyph_pt;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(RichText::new("Print all glyphs at").size(12.0).color(p.weak));
+            ui.add(egui::DragValue::new(&mut self.cfg.print_sheet.glyph_pt).range(4.0..=72.0).speed(0.25).suffix(" pt"));
+            if ui.add_enabled(!busy, egui::Button::new("Print…")).on_hover_text("Every glyph of this style, on as many pages as it takes").clicked() {
+                self.print_glyphs(face, false);
+            }
+            if ui.add_enabled(!busy, egui::Button::new("Save as PDF…")).clicked() {
+                self.print_glyphs(face, true);
+            }
+            if busy {
+                ui.spinner();
+            }
+        });
+        if self.cfg.print_sheet.glyph_pt != before {
+            self.dirty = true;
+        }
+    }
+
     fn tab_glyphs(&mut self, ui: &mut Ui, fi: usize) {
         let p = self.p();
         let f = self.face_picker(ui, fi, false);
@@ -303,6 +343,8 @@ impl FontCraftApp {
                 .hint_text("Search glyphs: a character, a name (e.g. ampersand) or U+0041")
                 .desired_width(f32::INFINITY),
         );
+        ui.add_space(4.0);
+        self.glyph_print_row(ui, f);
         ui.add_space(6.0);
         let all = &self.glyphs.as_ref().unwrap().1;
         let q = self.glyph_query.trim().to_lowercase();
@@ -493,6 +535,88 @@ impl FontCraftApp {
                 });
             }
         });
+    }
+
+    /// A one-page print sheet of this font: a waterfall with the name and size (each line at its
+    /// real size), the sample text, the characters and paragraphs of running text.
+    fn tab_print(&mut self, ui: &mut Ui, fi: usize) {
+        let p = self.p();
+        let f = self.face_picker(ui, fi, false);
+        let before = self.cfg.print_sheet.clone();
+        let busy = self.print_rx.is_some();
+        // every row wraps inside the panel's width: nothing here may push the panel wider (a field
+        // sized from the space left over made it grow a little on every frame)
+        egui::ScrollArea::vertical().id_salt("printsheet").auto_shrink([false, false]).show(ui, |ui| {
+            // measured inside the scroll area, so the scroll bar's room is already taken off
+            let width = ui.available_width();
+            ui.set_max_width(width);
+            ui.add(egui::Label::new(RichText::new("One A4 page of this style, black on white. Every size is printed at exactly that size.").size(12.0).color(p.weak)).wrap());
+            ui.add_space(8.0);
+            let c = &mut self.cfg.print_sheet;
+            let head = |ui: &mut Ui, t: &str| {
+                ui.add_space(6.0);
+                ui.label(RichText::new(t).size(11.0).strong().color(p.weak));
+            };
+            head(ui, "WATERFALL");
+            ui.checkbox(&mut c.waterfall, "Waterfall of sizes");
+            ui.add_enabled_ui(c.waterfall, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.radio_value(&mut c.waterfall_sample, false, "Font name and size");
+                    ui.radio_value(&mut c.waterfall_sample, true, "Sample text");
+                });
+                ui.label(RichText::new("Sizes (pt)").color(p.weak));
+                ui.horizontal(|ui| {
+                    let field = (width - 100.0).clamp(80.0, 420.0);
+                    ui.add(egui::TextEdit::singleline(&mut c.sizes).desired_width(field));
+                    if ui.small_button("Reset").on_hover_text("6, 8, 10 … 72").clicked() {
+                        c.sizes = config::SHEET_SIZES.into();
+                    }
+                });
+            });
+            head(ui, "SAMPLE TEXT");
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut c.sample, "The sample text at");
+                ui.add_enabled(c.sample, egui::DragValue::new(&mut c.sample_pt).range(6.0..=72.0).speed(0.5).suffix(" pt"));
+            });
+            ui.add(egui::Label::new(RichText::new(format!("“{}”", self.cfg.preview_text.trim())).size(11.5).italics().color(p.weak)).truncate());
+            ui.checkbox(&mut c.charset, "Characters: A–Z, a–z, 0–9 and punctuation");
+            head(ui, "RUNNING TEXT");
+            ui.horizontal_wrapped(|ui| {
+                ui.checkbox(&mut c.lorem, "Lorem ipsum");
+                ui.add_enabled(c.lorem, egui::DragValue::new(&mut c.lorem_paras).range(1..=5).suffix(" paragraphs"));
+                ui.label(RichText::new("at").color(p.weak));
+                ui.add_enabled(c.lorem, egui::DragValue::new(&mut c.lorem_pt).range(5.0..=24.0).speed(0.25).suffix(" pt"));
+            });
+            ui.add(egui::Label::new(RichText::new("Next to the small sizes, as much as the page holds.").size(11.5).color(p.weak)).wrap());
+            ui.add_space(12.0);
+            let c = self.cfg.print_sheet.clone();
+            let nothing = !(c.waterfall && !c.size_list().is_empty()) && !c.sample && !c.charset && !c.lorem;
+            ui.horizontal_wrapped(|ui| {
+                let print = egui::Button::new(RichText::new("Print…").color(p.on_accent)).fill(p.accent);
+                if ui.add_enabled(!busy && !nothing, print).on_hover_text("Opens the sheet in your PDF app to print it").clicked() {
+                    self.print_sheet(f, false);
+                }
+                if ui.add_enabled(!busy && !nothing, egui::Button::new("Save as PDF…")).clicked() {
+                    self.print_sheet(f, true);
+                }
+                if busy {
+                    ui.spinner();
+                }
+                if ui.small_button("Defaults").clicked() {
+                    self.cfg.print_sheet = config::PrintSheet::default();
+                }
+            });
+            if nothing {
+                ui.label(RichText::new("Choose at least one part to print.").size(11.5).color(p.accent));
+            }
+            ui.add_space(16.0);
+            ui.label(RichText::new("GLYPH OVERVIEW").size(11.0).strong().color(p.weak));
+            ui.add(egui::Label::new(RichText::new("Every glyph of this style at one size, with its code – on as many pages as it takes.").size(11.5).color(p.weak)).wrap());
+            self.glyph_print_row(ui, f);
+        });
+        if self.cfg.print_sheet != before {
+            self.dirty = true;
+        }
     }
 
     fn tab_tester(&mut self, ui: &mut Ui, fi: usize) {

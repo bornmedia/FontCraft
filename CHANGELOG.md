@@ -1,5 +1,39 @@
 # What's new in FontCraft
 
+## 1.3.4
+
+### Print a font: a one-page specimen
+* The font panel on the right has a new **Print** tab. It makes one A4 page of the chosen style: the name large, a
+  waterfall from 6 to 72 pt ("Tahoma 6pt" … "Tahoma 72pt"), the characters, a few paragraphs of lorem ipsum and your
+  sample text. Every size is printed at exactly that size.
+* Choose what goes on the page: the waterfall with the font's name or with the sample text, your own sizes, the
+  sample text's size, and how many paragraphs of running text. "Print…" opens the page in your PDF app; "Save as
+  PDF…" keeps it. If a choice doesn't fit on the one page, FontCraft leaves out the largest sizes and says so.
+* Collection printing now uses exact type sizes too.
+
+### Print the glyph overview
+* "Print all glyphs at 12 pt" in the Glyphs tab (and in the Print tab): every glyph of the style, all at one size
+  (12 pt unless you change it), each with its code, grouped by Unicode block like on screen – on as many pages as it
+  takes. "Print…" opens it in your PDF app; "Save as PDF…" keeps it.
+
+### Clean Application Font Caches…
+* New in the FontCraft menu. When a font is missing from a program's font menu, shows up twice or looks wrong, clear
+  that program's font cache: **Adobe apps** (Photoshop, Illustrator, InDesign, Acrobat…), **Microsoft Office** and
+  **QuarkXPress**, and on a Mac or Linux also your own system font cache. Choose which ones; FontCraft shows what it
+  found and how big it is, and tells you to close a program that is still open.
+* Only caches are deleted – never fonts, Adobe Fonts, documents or InDesign's recovery data. Each program builds its
+  cache again the next time it starts.
+
+### The font list as before, the details in the font panel
+* The columns from 1.3.3 are gone again: each font has its one information line above the preview, as before.
+* Everything the columns showed is now in **About this font** at the top of the font panel: format, category,
+  designer, foundry, languages, version, the date it was added and how it looks (sans, monoline…).
+* Search still also shows matching collections, tags and folders.
+
+### Fixed
+* The font panel no longer widens by itself when you open the Print tab. Its width is now only remembered when you
+  drag its edge, and a panel that had grown to the maximum this way starts at its normal width again.
+
 ## 1.3.3
 
 ### Search also finds collections, tags and folders

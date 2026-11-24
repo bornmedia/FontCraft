@@ -34,82 +34,58 @@ pub enum ViewMode {
     Grid,
 }
 
-/// A column of the font list's information line (above each preview).
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug, Hash)]
-pub enum Column {
-    Name,
-    Styles,
-    Format,
-    Category,
-    Source,
-    Designer,
-    Foundry,
-    Languages,
-    Version,
-    Added,
-    Tags,
+/// The choices for a font's one-page print sheet (Print tab of the font panel).
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
+#[serde(default)]
+pub struct PrintSheet {
+    pub waterfall: bool,
+    /// the waterfall's sizes in points, as typed ("6, 8, 10…")
+    pub sizes: String,
+    /// the waterfall shows the sample text instead of the font's name and size
+    pub waterfall_sample: bool,
+    pub sample: bool,
+    pub sample_pt: f32,
+    pub charset: bool,
+    pub lorem: bool,
+    pub lorem_paras: u8,
+    pub lorem_pt: f32,
+    /// the size of every glyph in the printed glyph overview
+    pub glyph_pt: f32,
 }
 
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize, Debug)]
-pub struct ColumnCfg {
-    pub column: Column,
-    pub width: f32,
-    pub shown: bool,
-}
+pub const SHEET_SIZES: &str = "6, 8, 10, 12, 14, 16, 18, 20, 24, 32, 36, 42, 48, 60, 72";
 
-impl Column {
-    pub const ALL: [Column; 11] = [
-        Column::Name,
-        Column::Styles,
-        Column::Format,
-        Column::Category,
-        Column::Source,
-        Column::Designer,
-        Column::Foundry,
-        Column::Languages,
-        Column::Version,
-        Column::Added,
-        Column::Tags,
-    ];
-    pub fn title(self) -> &'static str {
-        match self {
-            Column::Name => "Name",
-            Column::Styles => "Styles",
-            Column::Format => "Format",
-            Column::Category => "Category",
-            Column::Source => "Source",
-            Column::Designer => "Designer",
-            Column::Foundry => "Foundry",
-            Column::Languages => "Languages",
-            Column::Version => "Version",
-            Column::Added => "Added",
-            Column::Tags => "Tags",
+impl Default for PrintSheet {
+    fn default() -> Self {
+        Self {
+            waterfall: true,
+            sizes: SHEET_SIZES.into(),
+            waterfall_sample: false,
+            sample: true,
+            sample_pt: 18.0,
+            charset: true,
+            lorem: true,
+            lorem_paras: 3,
+            lorem_pt: 9.0,
+            glyph_pt: 12.0,
         }
     }
-    /// The columns a new list starts with (the rest can be switched on).
-    pub fn defaults() -> Vec<ColumnCfg> {
-        Column::ALL
-            .iter()
-            .map(|c| {
-                let (width, shown) = match c {
-                    Column::Name => (230.0, true),
-                    Column::Styles => (56.0, true),
-                    Column::Format => (64.0, true),
-                    Column::Category => (96.0, true),
-                    Column::Source => (150.0, true),
-                    Column::Designer => (150.0, false),
-                    Column::Foundry => (150.0, false),
-                    Column::Languages => (150.0, false),
-                    Column::Version => (90.0, false),
-                    Column::Added => (96.0, false),
-                    Column::Tags => (220.0, true),
-                };
-                ColumnCfg { column: *c, width, shown }
-            })
-            .collect()
-    }
 }
 
+impl PrintSheet {
+    /// The typed sizes as numbers (3 to 200 points), each once, smallest first.
+    pub fn size_list(&self) -> Vec<f32> {
+        let mut v: Vec<f32> = self
+            .sizes
+            .split([',', ';', ' '])
+            .filter_map(|s| s.trim().trim_end_matches("pt").trim().replace(',', ".").parse::<f32>().ok())
+            .filter(|x| (3.0..=200.0).contains(x))
+            .collect();
+        v.sort_by(|a, b| a.total_cmp(b));
+        v.dedup();
+        v
+    }
+}
 /// What to do with a font that is imported although it is already in the library.
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub enum DupAction {
@@ -278,8 +254,8 @@ pub struct Config {
     pub hidden_providers: BTreeSet<String>,
     /// searching also shows the best matching collections, tags and folders
     pub search_groups: bool,
-    /// the columns of the font list's information line, in their order
-    pub columns: Vec<ColumnCfg>,
+    /// what a font's print sheet shows
+    pub print_sheet: PrintSheet,
     // importing
     pub import_activate: bool,
     pub import_report: bool,
@@ -334,7 +310,7 @@ impl Default for Config {
             standard_folder: None,
             hidden_providers: BTreeSet::new(),
             search_groups: true,
-            columns: Column::defaults(),
+            print_sheet: PrintSheet::default(),
             import_activate: false,
             import_report: true,
             import_collection: false,
@@ -394,23 +370,15 @@ impl Config {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
+        // 1.3.3 could widen the font panel to its maximum by themselves: back to normal
+        if c.details_w >= 999.0 {
+            c.details_w = 420.0;
+        }
         if c.center_align {
             c.align = TextAlign::Center;
             c.center_align = false;
         }
-        // every column once (also ones added in a later version), in the saved order
-        let mut cols: Vec<ColumnCfg> = vec![];
-        for cc in c.columns.iter().chain(Column::defaults().iter()) {
-            if !cols.iter().any(|x| x.column == cc.column) {
-                cols.push(*cc);
-            }
-        }
-        if !cols.iter().any(|x| x.column == Column::Name && x.shown) {
-            if let Some(n) = cols.iter_mut().find(|x| x.column == Column::Name) {
-                n.shown = true;
-            }
-        }
-        c.columns = cols;
+
         c
     }
     pub fn save(&self) {

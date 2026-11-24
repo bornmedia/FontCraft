@@ -365,10 +365,18 @@ impl FontCraftApp {
     }
 
     /// Keep the width the person dragged a side panel to (`sidebar`: the left one, else the details).
+    /// Keep a panel's width – only when the person dragged it to that width (a panel that widens
+    /// because of its content is not remembered).
     pub(super) fn remember_width(&mut self, w: f32, sidebar: bool) {
-        let slot = if sidebar { &mut self.cfg.sidebar_w } else { &mut self.cfg.details_w };
-        if (*slot - w).abs() > 0.5 && !ctx_dragging(&self.ctx) {
-            *slot = w;
+        let k = sidebar as usize;
+        let saved = if sidebar { self.cfg.sidebar_w } else { self.cfg.details_w };
+        if ctx_dragging(&self.ctx) {
+            if (saved - w).abs() > 0.5 {
+                self.resizing[k] = Some(w);
+            }
+        } else if let Some(nw) = self.resizing[k].take() {
+            let slot = if sidebar { &mut self.cfg.sidebar_w } else { &mut self.cfg.details_w };
+            *slot = nw;
             self.dirty = true;
         }
     }

@@ -272,6 +272,14 @@ impl FontCraftApp {
             ui.close_menu();
         }
         ui.separator();
+        if ui
+            .button("Clean Application Font Caches…")
+            .on_hover_text("Clear the font lists Adobe apps, Microsoft Office and QuarkXPress keep – when a font is missing from their menus or looks wrong")
+            .clicked()
+        {
+            acts.push(Action::CleanCaches);
+            ui.close_menu();
+        }
         if ui.button("New collection").clicked() {
             acts.push(Action::NewCollection(vec![]));
             ui.close_menu();

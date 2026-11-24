@@ -93,7 +93,7 @@ fn copy_into(src: &Path, target: PathBuf, duplicate: bool) -> Result<PathBuf, St
 
 /// The date for the name of an "Imported" collection (year-month-day).
 fn today() -> String {
-    super::columns::date_of(now())
+    super::facts::date_of(now())
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 mod activation;
 mod app;
 mod config;
+mod fontcache;
 mod extras;
 mod fontload;
 mod fontmatch;
