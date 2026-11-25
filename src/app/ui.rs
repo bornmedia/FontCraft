@@ -475,7 +475,7 @@ impl FontCraftApp {
                         let ui_font = self.ui_font_file.clone();
                         let overlay = !typing
                             && crate::shape::needs_shaping(&text)
-                            && ui_font.as_ref().map(|f| self.shaped.covers(f, &text)).unwrap_or(false);
+                            && ui_font.as_ref().map(|f| self.shaped.covers(f, 0, &text)).unwrap_or(false);
                         let resp = ui.add(
                             egui::TextEdit::singleline(&mut self.cfg.preview_text)
                                 .id(id)

@@ -36,6 +36,8 @@ pub struct Spec {
     pub fg: [u8; 3],
     pub bg: [u8; 3],
     pub align: HAlign,
+    /// right-to-left mode: left-to-right text is set from the right too
+    pub rtl_mode: bool,
     /// the interface font, for names and page numbers
     pub label_font: Option<PathBuf>,
 }
@@ -195,6 +197,13 @@ fn layout(spec: &Spec) -> Vec<Vec<Placed>> {
     let mut pages: Vec<Vec<Placed>> = vec![vec![]];
     let mut y = MARGIN;
     let bottom = PAGE_H - MARGIN - 18.0;
+    let flip = |a: HAlign| match a {
+        HAlign::Left => HAlign::Right,
+        HAlign::Right => HAlign::Left,
+        c => c,
+    };
+    // left-to-right text: from the right as well in right-to-left mode
+    let ltr_align = if spec.rtl_mode { flip(spec.align) } else { spec.align };
     let place = |pages: &mut Vec<Vec<Placed>>, y: &mut f32, img: Rgb, align: HAlign, gap_after: f32, keep: f32| {
         let h = img.h_pt();
         if *y + h + keep > bottom && !pages.last().map(|p| p.is_empty()).unwrap_or(true) {
@@ -239,15 +248,7 @@ fn layout(spec: &Spec) -> Vec<Vec<Placed>> {
             // right-to-left and joined scripts are shaped; their lines start on the right
             Some(_) if crate::shape::needs_shaping(&text) => {
                 let data = std::fs::read(&item.path).unwrap_or_default();
-                let align = if crate::shape::base_rtl(&text) {
-                    match spec.align {
-                        HAlign::Left => HAlign::Right,
-                        HAlign::Right => HAlign::Left,
-                        c => c,
-                    }
-                } else {
-                    spec.align
-                };
+                let align = if crate::shape::base_rtl(&text) { flip(spec.align) } else { ltr_align };
                 for line in crate::shape::wrap_lines(&data, item.index, &text, px, content_w * PX_PER_PT) {
                     if let Some(pic) = crate::shape::render(&data, item.index, &line, px, None, crate::shape::HAlign::Left, 1) {
                         let mut rgb = Vec::with_capacity(pic.w * pic.h * 3);
@@ -261,7 +262,7 @@ fn layout(spec: &Spec) -> Vec<Vec<Placed>> {
             Some(font) => {
                 for line in wrap(&font, px, &text, content_w * PX_PER_PT) {
                     if let Some(img) = draw_line(&font, px, &line, spec.fg, spec.bg) {
-                        block.push((img, spec.align, 0.0));
+                        block.push((img, ltr_align, 0.0));
                     }
                 }
             }
@@ -529,7 +530,14 @@ fn sheet_layout(sheet: &Sheet) -> (Vec<Placed>, Vec<String>) {
         let (t, with_gutter) = if custom {
             (sheet.waterfall_text.clone(), true)
         } else if latin {
-            (format!("{} {}pt", sheet.name, fmt_pt(pt)), false)
+            let line = format!("{} {}pt", sheet.name, fmt_pt(pt));
+            // a long name at a large size: the size goes in the margin, so it is never cut off
+            let fits = one_line(&font, &data, sheet.index, &line, pt, f32::MAX / 8.0, ink, paper).map(|(i, _)| i.w_pt() <= cw).unwrap_or(true);
+            if fits {
+                (line, false)
+            } else {
+                (sheet.name.clone(), true)
+            }
         } else {
             (own_script.clone().unwrap_or_else(|| sheet.name.clone()), true)
         };
@@ -753,6 +761,38 @@ fn fill(dst: &mut Rgb, x: usize, y: usize, w: usize, h: usize, c: [u8; 3]) {
     }
 }
 
+/// How far a glyph's outline reaches above (negative) and below the baseline, in pixels.
+fn glyph_extent(font: &ab_glyph::FontArc, px: f32, ch: char) -> Option<(f32, f32)> {
+    use ab_glyph::{point, Font};
+    let g = font.glyph_id(ch).with_scale_and_position(em_scale(font, px), point(0.0, 0.0));
+    let b = font.outline_glyph(g)?.px_bounds();
+    Some((b.min.y, b.max.y))
+}
+
+/// One glyph drawn tightly around its outline, and where its top is relative to the baseline
+/// (pixels, negative = above). None for glyphs without an outline (spaces).
+fn draw_glyph(font: &ab_glyph::FontArc, px: f32, ch: char, fg: [u8; 3], bg: [u8; 3]) -> Option<(Rgb, f32)> {
+    use ab_glyph::{point, Font};
+    let g = font.glyph_id(ch).with_scale_and_position(em_scale(font, px), point(0.0, 0.0));
+    let og = font.outline_glyph(g)?;
+    let b = og.px_bounds();
+    let w = (b.width().ceil() as usize + 2).clamp(1, 4000);
+    let h = (b.height().ceil() as usize + 2).clamp(1, 4000);
+    let mut cov = vec![0f32; w * h];
+    og.draw(|x, y, a| {
+        let (x, y) = (x as usize + 1, y as usize + 1);
+        if x < w && y < h {
+            let i = y * w + x;
+            cov[i] = (cov[i] + a).min(1.0);
+        }
+    });
+    let mut data = Vec::with_capacity(w * h * 3);
+    for a in cov {
+        data.extend_from_slice(&mix(bg, fg, a));
+    }
+    Some((Rgb { w, h, data }, b.min.y.floor() - 1.0))
+}
+
 fn glyph_layout(sheet: &GlyphSheet) -> Result<(Vec<Vec<Placed>>, usize), String> {
     let (ink, paper) = ([18u8, 18, 18], [255u8, 255, 255]);
     let weak = [120u8, 116, 110];
@@ -778,7 +818,25 @@ fn glyph_layout(sheet: &GlyphSheet) -> Result<(Vec<Vec<Placed>>, usize), String>
     let cols = ((cw / (pt * 2.1).max(26.0)).floor() as usize).max(1);
     let cell_w = cw / cols as f32;
     let code_pt = 4.8;
-    let cell_h = pt * 1.45 + code_pt * 1.6 + 6.0;
+    // how far the glyphs reach above and below the baseline – measured on the glyphs themselves, so
+    // tall accents (Ǻ, stacked Vietnamese marks, Greek capitals with breathings) fit in their box
+    let (mut up, mut down) = {
+        use ab_glyph::{Font, ScaleFont};
+        let sf = font.as_scaled(em_scale(&font, pt * PX_PER_PT));
+        (sf.ascent() / PX_PER_PT, -sf.descent() / PX_PER_PT)
+    };
+    for c in &glyphs {
+        if let Some((top, bottom_)) = glyph_extent(&font, pt * PX_PER_PT, *c) {
+            up = up.max(-top / PX_PER_PT);
+            down = down.max(bottom_ / PX_PER_PT);
+        }
+    }
+    // a few extreme glyphs don't make every box huge: those are moved to fit instead
+    let up = up.min(pt * 1.6);
+    let down = down.min(pt * 0.9);
+    let pad = 3.0;
+    let code_h = code_pt * 1.6 + 2.0;
+    let cell_h = pad + up + down + pad + code_h;
     let mut pages: Vec<Vec<Placed>> = vec![vec![]];
     let mut y = MARGIN;
 
@@ -845,9 +903,19 @@ fn glyph_layout(sheet: &GlyphSheet) -> Result<(Vec<Vec<Placed>>, usize), String>
             }
             for (k, ch) in row.iter().enumerate() {
                 let x0 = cell_w * k as f32;
-                if let Some(g) = draw_line(&font, pt * PX_PER_PT, &ch.to_string(), ink, paper) {
+                if let Some((g, top)) = draw_glyph(&font, pt * PX_PER_PT, *ch, ink, paper) {
                     let gx = px(x0) as i64 + (px(cell_w) as i64 - g.w as i64) / 2;
-                    blit(&mut img, &g, gx, px(3.0) as i64);
+                    // on the common baseline; kept inside the box above the code
+                    let zone_top = px(pad * 0.5) as i64;
+                    let zone_bottom = (rh as i64) - px(code_h) as i64;
+                    let mut gy = px(pad + up) as i64 + top as i64;
+                    if gy + g.h as i64 > zone_bottom {
+                        gy = zone_bottom - g.h as i64;
+                    }
+                    if gy < zone_top {
+                        gy = zone_top;
+                    }
+                    blit(&mut img, &g, gx, gy);
                 }
                 if let Some(c) = lab(&format!("{:04X}", *ch as u32), code_pt, weak) {
                     let cx = px(x0) as i64 + (px(cell_w) as i64 - c.w as i64) / 2;
@@ -987,6 +1055,7 @@ mod tests {
             fg: [240, 235, 225],
             bg: [30, 28, 25],
             align: HAlign::Center,
+            rtl_mode: false,
             label_font: Some(fonts[0].clone()),
         };
         let dest = std::env::temp_dir().join("fontcraft-print-test.pdf");
@@ -1068,13 +1137,16 @@ mod tests {
     #[test]
     fn prints_a_sheet() {
         let win = std::env::var_os("WINDIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
-        let font = win.join("Fonts").join("tahoma.ttf");
-        if !font.exists() {
+        let label = win.join("Fonts").join("tahoma.ttf");
+        // another font for a picture of the sheet: FONTCRAFT_SHEET_FONT (file) and FONTCRAFT_SHEET_NAME
+        let font = std::env::var_os("FONTCRAFT_SHEET_FONT").map(PathBuf::from).unwrap_or_else(|| label.clone());
+        let name = std::env::var("FONTCRAFT_SHEET_NAME").unwrap_or_else(|_| "Tahoma".into());
+        if !font.exists() || !label.exists() {
             return;
         }
         let sheet = Sheet {
-            name: "Tahoma".into(),
-            info: "Regular  ·  2 styles  ·  TTF  ·  Matthew Carter  ·  Version 7.0".into(),
+            name: name.clone(),
+            info: if name == "Tahoma" { "Regular  ·  2 styles  ·  TTF  ·  Matthew Carter  ·  Version 7.0".into() } else { std::env::var("FONTCRAFT_SHEET_INFO").unwrap_or_default() },
             path: font.clone(),
             index: 0,
             rtl: String::new(),
@@ -1084,7 +1156,7 @@ mod tests {
             charset: true,
             lorem: Some((3, 9.0)),
             date: "2026-11-24".into(),
-            label_font: Some(font.clone()),
+            label_font: Some(label.clone()),
         };
         let (page, left_out) = sheet_layout(&sheet);
         assert!(!page.is_empty());
@@ -1092,7 +1164,7 @@ mod tests {
             assert!(pl.y + pl.img.h_pt() <= PAGE_H + 0.5, "everything stays on the page");
         }
         // em size: Tahoma's line (ascent to descent) is about 1.2 em
-        let f = load(&font, 0).unwrap();
+        let f = load(&label, 0).unwrap();
         let line = draw_line(&f, 72.0 * PX_PER_PT, "Tahoma", [0; 3], [255; 3]).unwrap();
         assert!((line.h_pt() / 72.0 - 1.2).abs() < 0.12, "72 pt line is {} pt high", line.h_pt());
         let dest = std::env::temp_dir().join("fontcraft-sheet-test.pdf");

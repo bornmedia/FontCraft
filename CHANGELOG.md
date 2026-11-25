@@ -1,5 +1,34 @@
 # What's new in FontCraft
 
+## 1.3.5
+
+### Right-to-left, reworked
+* Fonts that have Latin letters now show your sample text like every other font, aligned as you chose – also fonts
+  made for Arabic or Hebrew. Only a font that can't show the sample text (no Latin letters) shows its own script.
+* New **RTL** switch in the bar above the fonts, next to the alignment button (and separate from it). Switched on,
+  every font with Arabic, Hebrew or another right-to-left script shows that script first, set from the right. Fonts
+  without one keep the sample text as it is – left to right – but aligned to the right.
+* Text you type in a right-to-left script is always shown as typed, from the right. Printing a collection follows
+  the same rules.
+* A line too long for the window now keeps its beginning in view, also when it is aligned right or centred.
+
+### Clean Application Font Caches: more programs, and it scrolls
+* Two more choices: **Affinity** (only files named as font caches – your font substitutions, favourite glyphs and
+  the fonts Affinity added stay) and the **Craft apps** (Photocraft, VectorCraft, DesignCraft…: the font previews
+  they share, fetched again when needed).
+* The window no longer grows taller than FontCraft: the list of programs scrolls, and each "What is deleted" list
+  scrolls in its own box, so the buttons are always in reach.
+
+### Fixed
+* Printed glyph overview: glyphs with tall accents (Ǻ, stacked Vietnamese marks, Greek capitals with breathings) were
+  cut off at the top of their box. The boxes are now as tall as the font's tallest glyphs, and every glyph sits
+  inside its box on a common baseline.
+* Print sheet: a long font name at a large size no longer loses its size ("Playfair Display 60pt" doesn't fit
+  the page) – the size is then printed in the margin.
+* Tiles are tall enough again for at least two whole lines of the preview.
+* Without font folders and with the installed fonts hidden, FontCraft now opens on All instead of an empty list.
+* New screenshots on the project page.
+
 ## 1.3.4
 
 ### Print a font: a one-page specimen

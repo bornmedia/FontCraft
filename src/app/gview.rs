@@ -229,13 +229,17 @@ impl FontCraftApp {
                 };
                 let pp_ = ui.painter_at(prev_rect);
                 let wrap = tile.then_some(prev_rect.width());
-                // right-to-left families (Google says which) get a sample in their script, shaped
-                let ftext = super::rtl::text_for(&text, &self.gcat[gi].rtl);
+                // right-to-left families (Google says which): their script when the switch is on, or
+                // when the font can't show the sample text
+                let file = self.gpreview_file(gi);
+                let rtl = self.gcat[gi].rtl.clone();
+                let (ftext, falign) =
+                    super::rtl::preview_text(&mut self.shaped, &rtl, 0, file.as_ref().map(|(p, i)| (p.as_path(), *i)), &text, align, self.cfg.rtl_mode);
                 let shaped = crate::shape::needs_shaping(&ftext);
                 match self.gpreview_font(gi) {
                     (Some(_), _) if shaped => {
-                        let painted = match self.gpreview_file(gi) {
-                            Some((path, index)) => self.shaped.paint(&pp_, prev_rect, &path, index, &ftext, size, fg, align, wrap),
+                        let painted = match file {
+                            Some((path, index)) => self.shaped.paint(&pp_, prev_rect, &path, index, &ftext, size, fg, falign, wrap),
                             None => false,
                         };
                         if !painted {
@@ -244,7 +248,7 @@ impl FontCraftApp {
                             pp_.rect_filled(Rect::from_min_size(pos2(x, prev_rect.top() + size * 0.2), vec2(w, size * 0.75)), CornerRadius::same(4), p.skeleton);
                         }
                     }
-                    (Some(ff), _) => paint_on_baseline(&pp_, prev_rect, &text, FontId::new(size, ff), fg, align, wrap),
+                    (Some(ff), _) => paint_on_baseline(&pp_, prev_rect, &ftext, FontId::new(size, ff), fg, falign, wrap),
                     (None, Some(why)) => {
                         pp_.text(prev_rect.left_top() + vec2(2.0, 6.0), Align2::LEFT_TOP, why, FontId::proportional(13.0), p.weak);
                     }

@@ -28,25 +28,31 @@ impl FontCraftApp {
         let (bg, fg) = self.preview_colors();
         let bg = bg.unwrap_or(p.content);
         let rgb = |c: Color32| [c.r(), c.g(), c.b()];
-        let items: Vec<Item> = fams
-            .iter()
-            .filter_map(|fi| self.families.get(*fi))
-            .map(|f| {
-                let face = &self.faces[f.primary].meta;
-                let n = f.faces.len();
-                Item {
-                    name: f.name.clone(),
-                    info: format!("{} · {n} style{}", f.ext, if n == 1 { "" } else { "s" }),
-                    path: face.path.clone(),
-                    index: face.index,
-                    rtl: f.rtl.clone(),
-                }
-            })
-            .collect();
-        let spec = Spec {
+        let text = if self.cfg.preview_text.trim().is_empty() { "The quick brown fox jumps over the lazy dog.".to_string() } else { self.cfg.preview_text.clone() };
+        // the same choice as on screen: a font's right-to-left script with the switch on, or when it
+        // can't show the sample text
+        let mut items: Vec<Item> = vec![];
+        for fi in &fams {
+            let Some(f) = self.families.get(*fi) else { continue };
+            let face = &self.faces[f.primary].meta;
+            let n = f.faces.len();
+            let script = super::rtl::rtl_script(&f.rtl, f.scripts);
+            let rtl = match script {
+                Some(s) if self.cfg.rtl_mode || !self.shaped.covers(&face.path, face.index, &text) => s.to_string(),
+                _ => String::new(),
+            };
+            items.push(Item {
+                name: f.name.clone(),
+                info: format!("{} · {n} style{}", f.ext, if n == 1 { "" } else { "s" }),
+                path: face.path.clone(),
+                index: face.index,
+                rtl,
+            });
+        }        let spec = Spec {
             title: title.clone(),
             items,
-            text: if self.cfg.preview_text.trim().is_empty() { "The quick brown fox jumps over the lazy dog.".into() } else { self.cfg.preview_text.clone() },
+            text,
+            rtl_mode: self.cfg.rtl_mode,
             size_px: self.cfg.preview_size,
             fg: rgb(fg),
             bg: rgb(bg),

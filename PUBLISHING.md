@@ -35,6 +35,24 @@ Share this link, which always points to the newest version:
 
 Everyone with FontCraft sees a "FontCraft 1.4.0 is available" notice at the bottom of the window.
 
+## 4. Renaming the app
+
+Rename the **existing** repository instead of making a new one. That keeps every earlier release and download link
+and the "new version available" notice, because GitHub forwards the old address to the new one.
+
+1. On github.com open the repository › **Settings** › **General**. Type the new name under *Repository name* and
+   click **Rename**.
+2. In GitHub Desktop choose **Repository › Repository settings… › Remote**, change the address to the new one
+   (`https://github.com/YOUR-NAME/NEW-NAME.git`) and click **Save**. Pushing would work without this too, thanks
+   to the forwarding, but this way nothing depends on it.
+3. The folder on your computer can keep its name. If you rename it anyway, GitHub Desktop shows "Can't find
+   repository": click **Locate…** and pick the renamed folder.
+4. Ask Craft Anything to rename the app itself: window title, menus, the names of the downloads and the release
+   page. Your settings, collections and active fonts are carried over to the new name.
+5. Raise the version number, commit, **Push origin** and run the **Release** workflow as usual. The link
+   `https://github.com/YOUR-NAME/NEW-NAME/releases/latest` then points to the new downloads; the old link keeps
+   working too.
+
 ## No fonts in the project
 
 FontCraft doesn't contain a single font file. The window uses the computer's own interface font, and

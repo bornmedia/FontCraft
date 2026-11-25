@@ -254,6 +254,8 @@ pub struct Config {
     pub hidden_providers: BTreeSet<String>,
     /// searching also shows the best matching collections, tags and folders
     pub search_groups: bool,
+    /// right-to-left mode: fonts with a right-to-left script show it first, everything from the right
+    pub rtl_mode: bool,
     /// what a font's print sheet shows
     pub print_sheet: PrintSheet,
     // importing
@@ -310,6 +312,7 @@ impl Default for Config {
             standard_folder: None,
             hidden_providers: BTreeSet::new(),
             search_groups: true,
+            rtl_mode: false,
             print_sheet: PrintSheet::default(),
             import_activate: false,
             import_report: true,

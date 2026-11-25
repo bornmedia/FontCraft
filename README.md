@@ -53,11 +53,28 @@ Right-click a font › *Delete…* (or select several and press Delete). FontCra
   Your system asks for administrator permission where needed.
 
 ### Right-to-left scripts
-Arabic, Hebrew, Persian, Urdu and other right-to-left fonts are recognised and previewed in their own script,
-aligned to the right and written from right to left with properly joined letters – also with your own text
-from the preview field, and in printed PDFs.
+Arabic, Hebrew, Persian, Urdu and other right-to-left scripts are written from right to left with properly joined
+letters – also your own text from the preview field, and in printed PDFs. Fonts with Latin letters show your sample
+text like any other font; the **RTL** switch above the list shows every font's right-to-left script first, with
+everything set from the right. Fonts without Latin letters always show their own script.
 
-### Smart filters and printing
+![The RTL switch: Arabic fonts in their script, Latin fonts aligned right](docs/screenshots/rtl.png)
+
+### Search finds collections, tags and folders too
+While you type, the best matching collections, tags and folders appear above the fonts – one click opens them.
+
+![Searching "hand" finds the #handwritten tag and its fonts](docs/screenshots/search.png)
+
+### Print a font: one-page specimen and glyph overview
+The **Print** tab of a font makes one A4 page: the name large, a waterfall from 6 to 72 pt (every size exactly that
+size), the characters, running text and your sample text. Choose what goes on it, then print or save a PDF. The
+Glyphs tab prints every glyph of a style at 12 pt (or the size you choose) with its code, on as many pages as needed.
+
+![The Print tab](docs/screenshots/print-sheet.png)
+
+<img src="docs/screenshots/specimen.png" alt="A printed specimen page" width="420">
+
+### Smart filters and printing collections
 Save searches as smart filters ("Languages contains Arabic", "Category is Sans Serif", "Activation is Activated"…).
 Right-click a collection, tag or smart filter and choose **Print…** for a PDF of all its fonts with your preview
 text, size and colours – print it from your PDF app or save it.
@@ -124,6 +141,13 @@ A list or a tile view (tiles of equal size that fill the window's width), six wa
 
 ![Grid view in the light theme](docs/screenshots/grid-light.png)
 
+### Clean Application Font Caches
+When a font is missing from a program's font menu, shows up twice or looks wrong: clear the font caches of Adobe
+apps, Microsoft Office, QuarkXPress, Affinity and the Craft apps from the FontCraft menu. Only caches are deleted –
+never fonts or documents.
+
+![Clean Application Font Caches](docs/screenshots/cache-cleaner.png)
+
 ### And also
 * **Auto-activation:** drop a Photoshop, Illustrator, InDesign, PDF, SVG, Word or PowerPoint file onto the window,
   or watch project folders. The fonts the document uses are switched on, and missing ones can come from Google Fonts.
@@ -133,8 +157,8 @@ A list or a tile view (tiles of equal size that fill the window's width), six wa
   Matching collections, tags and folders show up above the fonts.
 * **Print sheet:** the Print tab of a font makes a one-page specimen – a waterfall at exact sizes, the characters,
   running text and your sample text.
-* **Clean Application Font Caches…** (FontCraft menu): clear the font caches of Adobe apps, Microsoft Office and
-  QuarkXPress when their font menus are out of date. Fonts and documents are never touched.
+* **Clean Application Font Caches…** (FontCraft menu): clear the font caches of Adobe apps, Microsoft Office,
+  QuarkXPress, Affinity and the Craft apps when their font menus are out of date. Fonts and documents are never touched.
 * **Keyboard shortcuts:** Ctrl+Shift+A / Ctrl+Shift+D (⌘⇧A / ⌘⇧D on a Mac) activate and deactivate the selected
   fonts; F1 shows the full list (Settings › Keyboard shortcuts), with the key names of your keyboard.
 * **Adjustable panels:** drag the edge of the sidebar or the font details to the width you like.

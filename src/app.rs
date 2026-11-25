@@ -501,7 +501,8 @@ impl FontCraftApp {
         });
         let cache: ScanCache = config::load_cache();
         let rx = library::spawn_scan(Self::scan_folders(&cfg), cache, cc.egui_ctx.clone());
-        let view = if cfg.folders.is_empty() { View::Installed } else { View::All };
+        // without font folders the installed fonts are the first thing to see – unless they are hidden
+        let view = if cfg.folders.is_empty() && cfg.show_system { View::Installed } else { View::All };
         let google = Google::new(cc.egui_ctx.clone());
         google.load_catalogs(shot.is_none());
         let watch_list: watcher::WatchList = std::sync::Arc::new(std::sync::Mutex::new(cfg.folders.clone()));
@@ -614,6 +615,9 @@ impl FontCraftApp {
             if s.contains("sand") {
                 app.cfg.theme = Theme::Sand;
             }
+            if s.contains("lighttheme") {
+                app.cfg.theme = Theme::Light;
+            }
             if s.contains("settings") {
                 app.show_settings = true;
             }
@@ -633,6 +637,9 @@ impl FontCraftApp {
             }
             if s.contains("glyphtab") {
                 app.tab = Tab::Glyphs;
+            }
+            if s.contains("rtlmode") {
+                app.cfg.rtl_mode = true;
             }
             if s.contains("caches") {
                 app.cache_open();

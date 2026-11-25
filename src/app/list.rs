@@ -15,8 +15,9 @@ pub(super) fn tile_layout(avail: f32, preview: f32) -> (usize, f32, f32) {
     let want = (preview * 5.0).clamp(190.0, 520.0);
     let cols = (((avail + TILE_GAP) / (want + TILE_GAP)).floor() as usize).max(1);
     let w = ((avail - TILE_GAP * (cols as f32 - 1.0)) / cols as f32).max(120.0);
-    // a calm, slightly wide shape, tall enough for two to three lines of the preview
-    let h = (w * 0.62).max(48.0 + preview * 2.3).min(w * 1.1).max(48.0 + preview * 1.3);
+    // a calm, slightly wide shape, tall enough for at least two whole lines of the preview (a line
+    // takes about 1.75 × the size; only lines that fit completely are shown)
+    let h = (w * 0.62).max(50.0 + preview * 3.8).min(w * 1.25).max(48.0 + preview * 2.0);
     (cols, w, h)
 }
 
@@ -31,6 +32,13 @@ pub(super) fn paint_on_baseline(
     wrap: Option<f32>,
 ) {
     let size = font.size;
+    // a single line longer than the room keeps its beginning in view (from the left), whatever
+    // the alignment – otherwise right-aligned or centred text would lose its first words
+    let align = if wrap.is_none() && align != config::TextAlign::Left && painter.layout_no_wrap(text.to_string(), font.clone(), color).size().x > area.width() {
+        config::TextAlign::Left
+    } else {
+        align
+    };
     let make = |max_rows: usize| {
         let mut job = egui::text::LayoutJob::simple(text.to_string(), font.clone(), color, wrap.unwrap_or(f32::INFINITY));
         job.halign = align.halign();
@@ -248,6 +256,24 @@ impl FontCraftApp {
                     }
                 }
             });
+            // right-to-left mode (its own switch, apart from the alignment above)
+            let (rr, rresp) = ui.allocate_exact_size(vec2(36.0, 28.0), Sense::click());
+            let on = self.cfg.rtl_mode;
+            if on || rresp.hovered() {
+                ui.painter().rect_filled(rr, CornerRadius::same(6), if on { p.sel } else { p.hover });
+            }
+            let rcol = if on { p.accent } else if rresp.hovered() { p.text } else { p.weak };
+            ui.painter().text(rr.center() + vec2(0.0, -4.0), Align2::CENTER_CENTER, "RTL", FontId::proportional(10.5), rcol);
+            ui.painter().arrow(pos2(rr.right() - 9.0, rr.center().y + 7.0), vec2(-18.0, 0.0), Stroke::new(1.2_f32, rcol));
+            let tip = if on {
+                "Right-to-left: on – fonts with Arabic, Hebrew… show that script first, everything set from the right. Click to switch off."
+            } else {
+                "Right-to-left: off – click to show fonts with Arabic, Hebrew… in that script first, everything set from the right"
+            };
+            if rresp.on_hover_text(tip).clicked() {
+                self.cfg.rtl_mode = !on;
+                self.dirty = true;
+            }
             ui.add_space(14.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(8.0);
@@ -507,19 +533,28 @@ impl FontCraftApp {
                 }
                 let prev_rect = Rect::from_min_max(pos2(rect.left() + 14.0, rect.top() + 20.0), pos2(rect.right() - 40.0, rect.bottom()));
                 let pp_ = ui.painter_at(prev_rect);
-                // right-to-left fonts get a sample in their script; such text is shaped and set right to left
-                let ftext = super::rtl::text_for(&text, &fam.rtl);
+                // what the preview shows: the sample text, or (right-to-left switch, or a font without
+                // Latin letters) a sample in the font's right-to-left script, shaped and set from the right
+                let (ftext, falign) = super::rtl::preview_text(
+                    &mut self.shaped,
+                    &fam.rtl,
+                    fam.scripts,
+                    Some((&face.meta.path, face.meta.index)),
+                    &text,
+                    align,
+                    self.cfg.rtl_mode,
+                );
                 let shaped = crate::shape::needs_shaping(&ftext);
                 match self.loader.family(face.id, &face.meta.path, face.meta.index) {
                     Some(_) if shaped => {
-                        if !self.shaped.paint(&pp_, prev_rect, &face.meta.path, face.meta.index, &ftext, size, fg, align, None) {
+                        if !self.shaped.paint(&pp_, prev_rect, &face.meta.path, face.meta.index, &ftext, size, fg, falign, None) {
                             let w = (prev_rect.width() * 0.4).min(size * 8.0);
                             let x = if crate::shape::base_rtl(&ftext) { prev_rect.right() - w - 2.0 } else { prev_rect.left() + 2.0 };
                             pp_.rect_filled(Rect::from_min_size(pos2(x, prev_rect.top() + size * 0.2), vec2(w, size * 0.75)), CornerRadius::same(4), p.skeleton);
                         }
                     }
                     Some(ff) => {
-                        paint_on_baseline(&pp_, prev_rect, &text, FontId::new(size, ff), fg, align, None);
+                        paint_on_baseline(&pp_, prev_rect, &ftext, FontId::new(size, ff), fg, falign, None);
                     }
                     None => {
                         if self.loader.is_failed(face.id) {
@@ -635,18 +670,26 @@ impl FontCraftApp {
                     }
                     let prev = Rect::from_min_max(pos2(inner.left(), inner.top() + 22.0), inner.max);
                     let pp_ = ui.painter_at(prev);
-                    let ftext = super::rtl::text_for(&text, &fam.rtl);
+                    let (ftext, falign) = super::rtl::preview_text(
+                        &mut self.shaped,
+                        &fam.rtl,
+                        fam.scripts,
+                        Some((&face.meta.path, face.meta.index)),
+                        &text,
+                        self.cfg.align,
+                        self.cfg.rtl_mode,
+                    );
                     let shaped = crate::shape::needs_shaping(&ftext);
                     match self.loader.family(face.id, &face.meta.path, face.meta.index) {
                         Some(_) if shaped => {
-                            let (size, align, w) = (self.cfg.preview_size, self.cfg.align, prev.width());
-                            if !self.shaped.paint(&pp_, prev, &face.meta.path, face.meta.index, &ftext, size, fg, align, Some(w)) {
+                            let (size, w) = (self.cfg.preview_size, prev.width());
+                            if !self.shaped.paint(&pp_, prev, &face.meta.path, face.meta.index, &ftext, size, fg, falign, Some(w)) {
                                 pp_.rect_filled(Rect::from_min_size(prev.min + vec2(0.0, 6.0), vec2(prev.width() * 0.7, size * 0.75)), CornerRadius::same(4), p.skeleton);
                             }
                         }
                         Some(ff) => {
                             let w = prev.width();
-                            paint_on_baseline(&pp_, prev, &text, FontId::new(self.cfg.preview_size, ff), fg, self.cfg.align, Some(w));
+                            paint_on_baseline(&pp_, prev, &ftext, FontId::new(self.cfg.preview_size, ff), fg, falign, Some(w));
                         }
                         None => {
                             pp_.rect_filled(

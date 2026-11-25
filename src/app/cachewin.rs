@@ -44,11 +44,16 @@ impl FontCraftApp {
         let mut open = true;
         let mut close = false;
         let mut go = false;
+        // the window never gets taller than the app; its list scrolls
+        let max_h = (ctx.screen_rect().height() - 120.0).max(240.0);
+        // (for a picture of the open lists in a check)
+        let open_lists = self.shot.is_some() && std::env::var("FONTCRAFT_SHOW").map(|s| s.contains("cachepaths")).unwrap_or(false);
         egui::Window::new(RichText::new("Clean Application Font Caches").strong())
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .default_width(540.0)
+            .max_height(max_h)
             .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 ui.set_width(540.0);
@@ -62,6 +67,9 @@ impl FontCraftApp {
                     .size(12.5),
                 );
                 ui.add_space(10.0);
+                // room for the text above and the buttons below; the programs scroll in between
+                let list_h = (max_h - 210.0).max(120.0);
+                egui::ScrollArea::vertical().id_salt("cachelist").max_height(list_h).auto_shrink([false, true]).show(ui, |ui| {
                 match &w.found {
                     None => {
                         ui.horizontal(|ui| {
@@ -103,10 +111,22 @@ impl FontCraftApp {
                             if !f.paths.is_empty() {
                                 ui.horizontal(|ui| {
                                     ui.add_space(22.0);
-                                    egui::CollapsingHeader::new(RichText::new("What is deleted").size(11.5).color(p.weak)).id_salt(("cachepaths", key(f.app))).show(ui, |ui| {
-                                        for path in &f.paths {
-                                            ui.add(egui::Label::new(RichText::new(path.display().to_string()).size(11.0).color(p.weak)).truncate());
-                                        }
+                                    egui::CollapsingHeader::new(RichText::new("What is deleted").size(11.5).color(p.weak)).id_salt(("cachepaths", key(f.app))).default_open(open_lists).show(ui, |ui| {
+                                        // a long list scrolls in its own small box
+                                        let row_h = 16.0;
+                                        egui::ScrollArea::vertical()
+                                            .id_salt(("cachepathlist", key(f.app)))
+                                            .max_height(180.0)
+                                            .auto_shrink([false, true])
+                                            .show_rows(ui, row_h, f.paths.len(), |ui, range| {
+                                                for path in &f.paths[range] {
+                                                    let w = ui.available_width();
+                                                    ui.allocate_ui_with_layout(vec2(w, row_h), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                                        ui.add(egui::Label::new(RichText::new(path.display().to_string()).size(11.0).color(p.weak)).truncate())
+                                                            .on_hover_text(path.display().to_string());
+                                                    });
+                                                }
+                                            });
                                     });
                                 });
                             }
@@ -114,6 +134,7 @@ impl FontCraftApp {
                         }
                     }
                 }
+                });
                 if let Some(r) = &w.result {
                     ui.add_space(4.0);
                     ui.label(RichText::new(r).color(p.accent));

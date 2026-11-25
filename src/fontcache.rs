@@ -10,13 +10,16 @@ pub enum CacheApp {
     Adobe,
     Office,
     Quark,
+    Affinity,
+    /// Photocraft, VectorCraft, DesignCraft… (their shared font preview cache)
+    Craft,
     /// macOS: the user's font database (atsutil); Linux: fontconfig's cache
     System,
 }
 
 impl CacheApp {
     pub fn all() -> Vec<CacheApp> {
-        let mut v = vec![CacheApp::Adobe, CacheApp::Office, CacheApp::Quark];
+        let mut v = vec![CacheApp::Adobe, CacheApp::Office, CacheApp::Quark, CacheApp::Affinity, CacheApp::Craft];
         if cfg!(any(target_os = "macos", all(unix, not(target_os = "macos")))) {
             v.push(CacheApp::System);
         }
@@ -27,6 +30,8 @@ impl CacheApp {
             CacheApp::Adobe => "Adobe apps",
             CacheApp::Office => "Microsoft Office",
             CacheApp::Quark => "QuarkXPress",
+            CacheApp::Affinity => "Affinity",
+            CacheApp::Craft => "Craft apps",
             CacheApp::System => {
                 if cfg!(target_os = "macos") {
                     "macOS font cache (your user)"
@@ -41,6 +46,8 @@ impl CacheApp {
             CacheApp::Adobe => "Photoshop, Illustrator, InDesign, Acrobat… – their font lists and font caches. Adobe Fonts, documents and recovery data stay as they are.",
             CacheApp::Office => "Word, Excel, PowerPoint, Outlook: the Office font cache, with the cloud fonts Office downloaded (fetched again when used)",
             CacheApp::Quark => "QuarkXPress's font cache",
+            CacheApp::Affinity => "Affinity's font caches. Your font substitutions, favourite glyphs and the fonts Affinity added stay as they are.",
+            CacheApp::Craft => "Photocraft, VectorCraft, DesignCraft…: the font previews they share (fetched again when needed)",
             CacheApp::System => {
                 if cfg!(target_os = "macos") {
                     "The font database macOS keeps for you; rebuilt after you log out and in again"
@@ -65,6 +72,8 @@ impl CacheApp {
             ],
             CacheApp::Office => &[("winword", "Word"), ("excel", "Excel"), ("powerpnt", "PowerPoint"), ("outlook", "Outlook"), ("microsoft word", "Word"), ("microsoft excel", "Excel"), ("microsoft powerpoint", "PowerPoint"), ("microsoft outlook", "Outlook")],
             CacheApp::Quark => &[("quarkxpress", "QuarkXPress")],
+            CacheApp::Affinity => &[("affinity", "Affinity"), ("designer", "Affinity Designer"), ("photo.exe", "Affinity Photo"), ("publisher", "Affinity Publisher")],
+            CacheApp::Craft => &[("photocraft", "Photocraft"), ("vectorcraft", "VectorCraft"), ("designcraft", "DesignCraft")],
             CacheApp::System => &[],
         }
     }
@@ -188,6 +197,54 @@ pub fn cache_paths(app: CacheApp) -> Vec<PathBuf> {
             }
             for r in roots.iter().filter(|r| r.is_dir()) {
                 walk(r, 5, &pick, &mut out);
+            }
+        }
+        CacheApp::Affinity => {
+            // only files and folders named as font caches; never "AffinityFonts" (fonts Affinity
+            // added), font_map.dat (your substitutions) or the glyph browser's favourites
+            let pick = |p: &Path, _dir: bool| {
+                let n = name_of(p).replace([' ', '_', '-', '.'], "");
+                n.contains("font") && n.contains("cache")
+            };
+            let mut roots: Vec<PathBuf> = vec![];
+            roots.extend(roaming.iter().map(|r| r.join("Affinity")));
+            roots.extend(local.iter().map(|r| r.join("Affinity")));
+            if let Some(l) = &lib {
+                if let Ok(rd) = std::fs::read_dir(l.join("Containers")) {
+                    for e in rd.flatten() {
+                        if name_of(&e.path()).starts_with("com.seriflabs.") || name_of(&e.path()).contains("affinity") {
+                            roots.push(e.path().join("Data").join("Library"));
+                        }
+                    }
+                }
+                roots.push(l.join("Application Support").join("Affinity"));
+                roots.push(l.join("Caches").join("Affinity"));
+            }
+            for r in roots.iter().filter(|r| r.is_dir()) {
+                walk(r, 6, &pick, &mut out);
+            }
+        }
+        CacheApp::Craft => {
+            // the Craft apps keep the font previews they share in a "Craft Fonts" folder
+            let mut roots: Vec<PathBuf> = vec![];
+            roots.extend(local.clone());
+            if let Some(l) = &lib {
+                roots.push(l.join("Application Support"));
+                roots.push(l.join("Caches"));
+            }
+            if cfg!(all(unix, not(target_os = "macos"))) {
+                if let Some(h) = home() {
+                    roots.push(env_dir("XDG_DATA_HOME").unwrap_or_else(|| h.join(".local").join("share")));
+                    roots.push(env_dir("XDG_CACHE_HOME").unwrap_or_else(|| h.join(".cache")));
+                }
+            }
+            for r in roots {
+                for name in ["Craft Fonts", "craft-fonts", "craft_fonts"] {
+                    let p = r.join(name).join("previews");
+                    if p.is_dir() {
+                        out.push(p);
+                    }
+                }
             }
         }
         CacheApp::System => {
