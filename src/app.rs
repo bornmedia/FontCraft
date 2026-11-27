@@ -400,7 +400,7 @@ pub struct FontCraftApp {
     google: Google,
     gcat: Vec<GFamily>,
     /// the catalogue of each source (indexed by Provider::idx)
-    gstates: [GState; 3],
+    gstates: [GState; 4],
     gvisible: Vec<usize>,
     gsel: Option<usize>,
     gjobs: HashSet<String>,
@@ -546,7 +546,7 @@ impl FontCraftApp {
             plus_resp: None,
             google,
             gcat: vec![],
-            gstates: [GState::Loading, GState::Loading, GState::Loading],
+            gstates: [GState::Loading, GState::Loading, GState::Loading, GState::Loading],
             gvisible: vec![],
             gsel: None,
             gjobs: HashSet::new(),

@@ -701,19 +701,132 @@ mod tests {
     }
 }
 
-/// Open the system file browser with the file selected.
+/// The folder to open when a file can't be selected: the file's own folder, or the nearest one
+/// above it that still exists (never the home folder because a path was empty).
+fn nearest_dir(p: &Path) -> Option<PathBuf> {
+    let mut d = if p.is_dir() { Some(p) } else { p.parent() };
+    while let Some(x) = d {
+        if !x.as_os_str().is_empty() && x.is_dir() {
+            return Some(x.to_path_buf());
+        }
+        d = x.parent();
+    }
+    None
+}
+
+/// Explorer's own syntax: `/select,"C:\path with spaces\file.ttf"`. Passed as one raw argument,
+/// because the usual quoting turns it into `"/select,C:\…"`, which Explorer doesn't understand –
+/// it then opens the user's folder instead.
+#[cfg(any(windows, test))]
+fn explorer_select_arg(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('/', "\\");
+    // `\\?\C:\…` and `\\?\UNC\server\…` are long-path forms Explorer can't open
+    let s = if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else {
+        s.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(s)
+    };
+    format!("/select,\"{s}\"")
+}
+
+/// `file:///…` with every character outside the safe set percent-encoded (for the Linux file manager).
+#[cfg(any(all(unix, not(target_os = "macos")), test))]
+fn file_uri(p: &Path) -> String {
+    let mut out = String::from("file://");
+    for b in p.to_string_lossy().bytes() {
+        if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Open the system file browser in the folder of the file, with the file selected.
 pub fn show_in_folder(p: &Path) {
+    let exists = p.is_file();
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("explorer").arg(format!("/select,{}", p.display())).spawn();
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("explorer");
+        if exists {
+            cmd.raw_arg(explorer_select_arg(p));
+        } else if let Some(d) = nearest_dir(p) {
+            cmd.raw_arg(format!("\"{}\"", d.to_string_lossy().replace('/', "\\")));
+        } else {
+            return;
+        }
+        let _ = cmd.spawn();
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open").arg("-R").arg(p).spawn();
+        if exists {
+            let _ = std::process::Command::new("open").arg("-R").arg(p).spawn();
+        } else if let Some(d) = nearest_dir(p) {
+            let _ = std::process::Command::new("open").arg(d).spawn();
+        }
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let dir = if p.is_dir() { p.to_path_buf() } else { p.parent().map(|d| d.to_path_buf()).unwrap_or_default() };
-        let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+        // the standard way to show a file selected (Files, Dolphin, Nemo, Thunar, Caja…)
+        if exists {
+            let shown = std::process::Command::new("dbus-send")
+                .args([
+                    "--session",
+                    "--print-reply",
+                    "--dest=org.freedesktop.FileManager1",
+                    "--type=method_call",
+                    "/org/freedesktop/FileManager1",
+                    "org.freedesktop.FileManager1.ShowItems",
+                ])
+                .arg(format!("array:string:{}", file_uri(p)))
+                .arg("string:")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if shown {
+                return;
+            }
+        }
+        if let Some(d) = nearest_dir(p) {
+            let _ = std::process::Command::new("xdg-open").arg(d).spawn();
+        }
+    }
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::*;
+
+    /// Explorer gets `/select,"…"` with the path quoted inside – also with spaces, forward slashes
+    /// and the long-path prefix.
+    #[test]
+    fn explorer_argument() {
+        assert_eq!(explorer_select_arg(Path::new(r"C:\My Fonts\Inter Bold.ttf")), r#"/select,"C:\My Fonts\Inter Bold.ttf""#);
+        assert_eq!(explorer_select_arg(Path::new("D:/Fonts/a b.otf")), r#"/select,"D:\Fonts\a b.otf""#);
+        assert_eq!(explorer_select_arg(Path::new(r"\\?\C:\Fonts\x.ttf")), r#"/select,"C:\Fonts\x.ttf""#);
+        assert_eq!(explorer_select_arg(Path::new(r"\\?\UNC\nas\fonts\x.ttf")), r#"/select,"\\nas\fonts\x.ttf""#);
+        assert_eq!(explorer_select_arg(Path::new(r"\\nas\Shared Fonts\x.ttf")), r#"/select,"\\nas\Shared Fonts\x.ttf""#);
+    }
+
+    #[test]
+    fn linux_file_address() {
+        assert_eq!(file_uri(Path::new("/home/a/My Fonts/Ü&x.ttf")), "file:///home/a/My%20Fonts/%C3%9C%26x.ttf");
+    }
+
+    /// A file that is gone opens the nearest folder that still exists – never an empty path.
+    #[test]
+    fn folder_of_a_missing_file() {
+        let d = std::env::temp_dir().join("fontcraft-reveal-test");
+        let _ = std::fs::create_dir_all(&d);
+        assert_eq!(nearest_dir(&d.join("gone").join("deeper").join("x.ttf")), Some(d.clone()));
+        let f = d.join("there.ttf");
+        std::fs::write(&f, b"x").unwrap();
+        assert_eq!(nearest_dir(&f), Some(d.clone()));
+        assert_eq!(nearest_dir(Path::new("x.ttf")), None);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

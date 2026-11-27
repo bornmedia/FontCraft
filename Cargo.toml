@@ -1,6 +1,6 @@
 [package]
 name = "fontcraft"
-version = "1.3.5"
+version = "1.3.6"
 edition = "2021"
 license = "MIT"
 description = "FontCraft - a free font manager: organise, preview and activate fonts without installing them."

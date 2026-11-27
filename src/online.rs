@@ -1,5 +1,6 @@
 //! The other free font sources next to Google Fonts: Fontshare (the Indian Type Foundry's
-//! free library) and Font Squirrel (hand-picked fonts that are free for commercial use).
+//! free library), Font Squirrel (hand-picked fonts that are free for commercial use) and STIX
+//! (STIX Two, the open fonts for science and mathematics, straight from its GitHub project).
 //!
 //! Files are kept in FontCraft's data folder:
 //!   online/<source>/catalog.json        the list of families (refreshed once a week)
@@ -73,8 +74,80 @@ fn catalog_url(p: Provider) -> &'static str {
     }
 }
 
+// ------------------------------------------------------------------ STIX
+
+/// The STIX Two release whose files are downloaded (a release tag never changes, so the
+/// addresses stay valid; newer releases can be added here).
+const STIX_TAG: &str = "v2.13b171";
+
+fn stix_file(name: &str) -> String {
+    format!("https://raw.githubusercontent.com/stipub/stixfonts/{STIX_TAG}/fonts/static_otf/{name}")
+}
+
+/// STIX Two: two families, listed here (the project has no catalogue to fetch).
+pub fn stix_catalog() -> Vec<GFamily> {
+    let designers = vec!["STI Pub companies".to_string(), "Tiro Typeworks".to_string()];
+    let mut text = base_family(Provider::Stix, "STIX Two Text".into(), "STIXTwoText".into(), "Serif".into());
+    let styles = [
+        ("400", "Regular", "Regular"),
+        ("400i", "Italic", "Italic"),
+        ("500", "Medium", "Medium"),
+        ("500i", "Medium Italic", "MediumItalic"),
+        ("600", "Semi Bold", "SemiBold"),
+        ("600i", "Semi Bold Italic", "SemiBoldItalic"),
+        ("700", "Bold", "Bold"),
+        ("700i", "Bold Italic", "BoldItalic"),
+    ];
+    text.styles = styles.iter().map(|s| s.0.to_string()).collect();
+    text.style_names = styles.iter().map(|s| s.1.to_string()).collect();
+    text.style_files = styles.iter().map(|s| stix_file(&format!("STIXTwoText-{}.otf", s.2))).collect();
+    text.nstyles = styles.len();
+    text.italic = true;
+    text.preview_src = stix_file("STIXTwoText-Regular.otf");
+    text.popularity = 1;
+    let mut math = base_family(Provider::Stix, "STIX Two Math".into(), "STIXTwoMath".into(), "Serif, Math".into());
+    math.styles = vec!["400".into()];
+    math.style_names = vec!["Regular".into()];
+    math.style_files = vec![stix_file("STIXTwoMath-Regular.otf")];
+    math.preview_src = stix_file("STIXTwoMath-Regular.otf");
+    math.popularity = 2;
+    for g in [&mut text, &mut math] {
+        g.designers = designers.clone();
+        g.license = "SIL Open Font License".into();
+        g.added = "2021-05-26".into();
+    }
+    vec![math, text]
+}
+
+/// STIX: every style is its own file in the project – fetched one by one into the family's folder.
+fn download_stix(g: &GFamily) -> Result<Vec<PathBuf>, String> {
+    let dir = g.dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut files = vec![];
+    for url in g.style_files.iter().filter(|u| !u.is_empty()) {
+        let name = url.rsplit('/').next().unwrap_or("font.otf").to_string();
+        let dest = dir.join(&name);
+        if !dest.exists() {
+            fetch(url, &dest)?;
+        }
+        // only real fonts stay
+        let ok = std::fs::read(&dest).map(|d| ttf_parser::Face::parse(&d, 0).is_ok()).unwrap_or(false);
+        if !ok {
+            let _ = std::fs::remove_file(&dest);
+            return Err(format!("{name} could not be read"));
+        }
+        files.push(dest);
+    }
+    // the licence goes along with the fonts
+    let _ = fetch(&format!("https://raw.githubusercontent.com/stipub/stixfonts/{STIX_TAG}/OFL.txt"), &dir.join("OFL.txt"));
+    Ok(files)
+}
+
 /// Load a catalogue from disk; fetch it when missing or older than a week.
 pub fn load_catalog(p: Provider, allow_network: bool) -> Result<Vec<GFamily>, String> {
+    if p == Provider::Stix {
+        return Ok(stix_catalog());
+    }
     let path = root(p).join("catalog.json");
     let fresh = std::fs::metadata(&path)
         .and_then(|m| m.modified())
@@ -343,7 +416,7 @@ fn entry_names(zip: &zip::ZipArchive<std::fs::File>) -> Vec<String> {
 /// A preview file for a family. Only Fontshare has single font files online; Font Squirrel
 /// is left out (it allows too few automatic requests for browsing).
 pub fn fetch_preview(g: &GFamily, dest: &Path) -> Result<PathBuf, String> {
-    if g.provider != Provider::Fontshare || g.preview_src.is_empty() {
+    if !matches!(g.provider, Provider::Fontshare | Provider::Stix) || g.preview_src.is_empty() {
         return Err("no preview file".into());
     }
     download(&g.preview_src, dest)?;
@@ -357,6 +430,9 @@ fn tidy_kind(s: &str) -> String {
 
 /// Download a whole family into the library folder; returns its font files.
 pub fn download_family(g: &GFamily) -> Result<Vec<PathBuf>, String> {
+    if g.provider == Provider::Stix {
+        return download_stix(g);
+    }
     let zp = zip_path(g);
     fetch(&download_url(g), &zp)?;
     let r = extract_family(g, &zp);
@@ -636,5 +712,29 @@ mod tests {
         let g = list.iter().find(|g| g.slug == "open-sans").unwrap();
         assert_eq!(g.category, "Sans Serif");
         assert!(g.nstyles >= 5);
+    }
+    /// STIX Two: both families download completely and every file is a font with its style.
+    /// Needs the internet; run with APPDATA/HOME pointing at a throw-away folder.
+    #[test]
+    #[ignore]
+    fn stix_download() {
+        let list = stix_catalog();
+        assert_eq!(list.len(), 2);
+        for g in &list {
+            let files = download_family(g).unwrap_or_else(|e| panic!("{}: {e}", g.name));
+            assert_eq!(files.len(), g.nstyles, "{}", g.name);
+            for f in &files {
+                let d = std::fs::read(f).unwrap();
+                let face = ttf_parser::Face::parse(&d, 0).unwrap();
+                let fam = face.names().into_iter().find(|n| n.name_id == ttf_parser::name_id::FAMILY).and_then(|n| n.to_string()).unwrap_or_default();
+                assert!(fam.starts_with("STIX Two"), "{fam}");
+                println!("{}  {}", f.display(), fam);
+            }
+            assert!(g.dir().join("OFL.txt").exists());
+            let preview = std::env::temp_dir().join(format!("stix-preview-{}.otf", g.slug));
+            fetch_preview(g, &preview).unwrap();
+            assert!(ttf_parser::Face::parse(&std::fs::read(&preview).unwrap(), 0).is_ok());
+            let _ = std::fs::remove_file(&preview);
+        }
     }
 }

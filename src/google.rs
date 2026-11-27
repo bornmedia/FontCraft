@@ -23,10 +23,12 @@ pub enum Provider {
     Google,
     Fontshare,
     FontSquirrel,
+    /// STIX Two: the scientific and mathematical fonts of the STI Pub companies (OFL)
+    Stix,
 }
 
 impl Provider {
-    pub const ALL: [Provider; 3] = [Provider::Google, Provider::Fontshare, Provider::FontSquirrel];
+    pub const ALL: [Provider; 4] = [Provider::Google, Provider::Fontshare, Provider::FontSquirrel, Provider::Stix];
     pub fn idx(self) -> usize {
         self as usize
     }
@@ -35,6 +37,7 @@ impl Provider {
             Provider::Google => "google",
             Provider::Fontshare => "fontshare",
             Provider::FontSquirrel => "fontsquirrel",
+            Provider::Stix => "stix",
         }
     }
     /// The short name in the sidebar.
@@ -43,6 +46,7 @@ impl Provider {
             Provider::Google => "Google",
             Provider::Fontshare => "Fontshare",
             Provider::FontSquirrel => "Font Squirrel",
+            Provider::Stix => "STIX",
         }
     }
     pub fn label(self) -> &'static str {
@@ -50,6 +54,7 @@ impl Provider {
             Provider::Google => "Google Fonts",
             Provider::Fontshare => "Fontshare",
             Provider::FontSquirrel => "Font Squirrel",
+            Provider::Stix => "STIX Fonts",
         }
     }
     pub fn site(self) -> &'static str {
@@ -57,6 +62,7 @@ impl Provider {
             Provider::Google => "fonts.google.com",
             Provider::Fontshare => "fontshare.com",
             Provider::FontSquirrel => "fontsquirrel.com",
+            Provider::Stix => "github.com/stipub/stixfonts",
         }
     }
     /// What the fonts may be used for, shown next to the count.
@@ -65,6 +71,7 @@ impl Provider {
             Provider::Google => "free and open source",
             Provider::Fontshare => "free for personal and commercial use",
             Provider::FontSquirrel => "hand-picked, free for commercial use",
+            Provider::Stix => "for science and maths, free and open source",
         }
     }
     pub fn about(self) -> &'static str {
@@ -72,6 +79,7 @@ impl Provider {
             Provider::Google => "Over 1,900 free font families from Google Fonts",
             Provider::Fontshare => "About 100 high-quality families by the Indian Type Foundry – free for personal and commercial use",
             Provider::FontSquirrel => "About 1,000 hand-picked font families that are free for commercial use",
+            Provider::Stix => "STIX Two – serif fonts for science, technology and mathematics: a text family in eight styles and a math font with thousands of symbols. Free and open source (SIL Open Font License)",
         }
     }
     /// Where downloaded families of this source are kept (one folder per family).
@@ -150,6 +158,7 @@ impl GFamily {
             Provider::Google => format!("https://fonts.google.com/specimen/{}", self.name.replace(' ', "+")),
             Provider::Fontshare => format!("https://www.fontshare.com/fonts/{}", self.slug),
             Provider::FontSquirrel => format!("https://www.fontsquirrel.com/fonts/{}", self.slug),
+            Provider::Stix => "https://github.com/stipub/stixfonts".into(),
         }
     }
 }
@@ -684,7 +693,7 @@ impl Google {
             let since = SystemTime::now();
             let mut result = match g.provider {
                 Provider::Google => download_family(&g.name),
-                Provider::Fontshare => crate::online::download_family(&g),
+                Provider::Fontshare | Provider::Stix => crate::online::download_family(&g),
                 // Font Squirrel only hands its files to people in a browser (see below)
                 Provider::FontSquirrel => Err(String::new()),
             };

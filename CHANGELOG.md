@@ -1,5 +1,19 @@
 # What's new in FontCraft
 
+## 1.3.6
+
+### New source: STIX Fonts
+* **STIX** joins Google, Fontshare and Font Squirrel under *Providers*: STIX Two, the open fonts for science,
+  technology and mathematics – **STIX Two Text** in eight styles (Regular to Bold, each with italic) and
+  **STIX Two Math** with thousands of mathematical symbols. Free and open source (SIL Open Font License).
+* Click the dot to download and activate a family, straight from the STIX project's own releases; the licence file
+  comes along. Like the other sources, it can be switched off in Settings › Library & folders, and smart filters
+  know "Source is STIX Fonts".
+
+### Fixed
+* "Show file in folder" opened the user folder on Windows when the path had a space in it. It now always opens the
+  folder the font file is in, with the file selected – on Windows, macOS and Linux (where the file manager is asked
+  to select it, or the folder is opened). If the file has gone, the nearest folder that still exists opens.
 ## 1.3.5
 
 ### Right-to-left, reworked

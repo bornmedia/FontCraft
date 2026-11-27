@@ -25,7 +25,7 @@ pub const FIELDS: [SmartField; 13] = [
 const CATEGORIES: [&str; 6] = ["Serif", "Sans Serif", "Script", "Display", "Symbol", "Monospace"];
 const ACTIVATION: [&str; 3] = ["Activated", "Deactivated", "Partly activated"];
 const FORMATS: [&str; 4] = ["TTF", "OTF", "TTC", "OTC"];
-const SOURCES: [&str; 6] = ["Installed on this computer", "My folders", "Network folders", "Google Fonts", "Fontshare", "Font Squirrel"];
+const SOURCES: [&str; 7] = ["Installed on this computer", "My folders", "Network folders", "Google Fonts", "Fontshare", "Font Squirrel", "STIX Fonts"];
 
 fn field_label(f: SmartField) -> &'static str {
     match f {
@@ -150,6 +150,7 @@ impl FontCraftApp {
                     "Google Fonts" => online(Provider::Google),
                     "Fontshare" => online(Provider::Fontshare),
                     "Font Squirrel" => online(Provider::FontSquirrel),
+                    "STIX Fonts" => online(Provider::Stix),
                     "Network folders" => !f.system && self.is_net_folder(path),
                     _ => !f.system && !any_online && !self.is_net_folder(path),
                 }

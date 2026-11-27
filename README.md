@@ -91,14 +91,16 @@ activate a family.
 
 ![Google Fonts](docs/screenshots/google-fonts.png)
 
-### Fontshare and Font Squirrel
-Two more free sources sit next to Google under *Providers*:
+### Fontshare, Font Squirrel and STIX
+Three more free sources sit next to Google under *Providers*:
 
 * **Fontshare** – about 100 high-quality families from the Indian Type Foundry, free for personal and commercial
   use. Live previews, filters and one-click download and activation, just like Google Fonts.
 * **Font Squirrel** – about 1,000 hand-picked families that are free for commercial use. Font Squirrel only hands
   its files to a web browser, so clicking the dot opens the download in your browser; FontCraft notices the file in
   your Downloads folder, adds the family and activates it. Previews appear once a family is in your library.
+* **STIX** – STIX Two, the open fonts for science and mathematics: STIX Two Text in eight styles and STIX Two Math,
+  downloaded straight from the STIX project (SIL Open Font License).
 
 ![Fontshare](docs/screenshots/fontshare.png)
 
